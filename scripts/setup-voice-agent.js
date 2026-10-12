@@ -57,7 +57,7 @@ function toolBody(url, secret) {
   };
 }
 
-function agentBody(toolId) {
+function agentBody(toolId, { withHindi = true } = {}) {
   return {
     name: 'Wingman — briefing calls',
     tags: ['wingman'],
@@ -65,7 +65,6 @@ function agentBody(toolId) {
       agent: {
         first_message: "Hi {{user_name}}, it's Wingman with your {{briefing_kind}}. Shall I go through it?",
         language: 'en',
-        hinglish_mode: true,
         dynamic_variables: {
           dynamic_variable_placeholders: {
             user_name: 'there', briefing_kind: 'morning briefing', briefing: '', local_time: '', call_token: '',
@@ -81,7 +80,10 @@ function agentBody(toolId) {
           },
         },
       },
-      tts: { model_id: process.env.ELEVENLABS_AGENT_TTS_MODEL || 'eleven_flash_v2_5', voice_id: config.elevenlabs.voiceId },
+      // English agents must use an English v2 model; adding Hindi (used for
+      // Urdu speakers, set per call) makes ElevenLabs use v2.5 for that language.
+      tts: { model_id: process.env.ELEVENLABS_AGENT_TTS_MODEL || 'eleven_flash_v2', voice_id: config.elevenlabs.voiceId },
+      ...(withHindi ? { language_presets: { hi: { overrides: {} } } } : {}),
       conversation: { max_duration_seconds: 1800 },
     },
     platform_settings: {
@@ -96,18 +98,43 @@ function agentBody(toolId) {
   if (!/^https:\/\//.test(base)) throw new Error(`PUBLIC_BASE_URL must be the public https URL (now: "${base}").`);
   const url = `${base}/voice/tools/ask`;
 
-  const tool = await el.call('POST', '/v1/convai/tools', toolBody(url, briefingCall.toolSecret()));
-  const toolId = tool.id || tool.tool_id;
+  // Reuse the ask_wingman tool if it already exists (re-runs shouldn't pile up copies).
+  const body = toolBody(url, briefingCall.toolSecret());
+  let toolId = null;
+  try {
+    const list = await el.call('GET', '/v1/convai/tools');
+    const found = (list.tools || []).find((t) => t.tool_config && t.tool_config.name === 'ask_wingman');
+    if (found) {
+      toolId = found.id;
+      await el.call('PATCH', `/v1/convai/tools/${encodeURIComponent(toolId)}`, body);
+    }
+  } catch (e) {
+    console.warn('(could not reuse existing tool, creating a new one)', e.message.slice(0, 120));
+    toolId = null;
+  }
+  if (!toolId) {
+    const tool = await el.call('POST', '/v1/convai/tools', body);
+    toolId = tool.id || tool.tool_id;
+  }
   console.log('ask_wingman tool:', toolId);
 
-  let agentId = config.elevenlabs.agentId;
-  if (agentId) {
-    await el.call('PATCH', `/v1/convai/agents/${encodeURIComponent(agentId)}`, agentBody(toolId));
-    console.log('Updated agent', agentId);
-  } else {
-    const a = await el.call('POST', '/v1/convai/agents/create', agentBody(toolId));
-    agentId = a.agent_id;
-    console.log('Created agent', agentId);
+  // Try with Urdu/Hindi support first; if the account rejects it, English only.
+  const save = async (withHindi) => {
+    const b = agentBody(toolId, { withHindi });
+    if (config.elevenlabs.agentId) {
+      await el.call('PATCH', `/v1/convai/agents/${encodeURIComponent(config.elevenlabs.agentId)}`, b);
+      return config.elevenlabs.agentId;
+    }
+    return (await el.call('POST', '/v1/convai/agents/create', b)).agent_id;
+  };
+  let agentId;
+  try {
+    agentId = await save(true);
+  } catch (e) {
+    if (!/language/i.test(e.message)) throw e;
+    console.warn('Urdu/Hindi preset not accepted — creating an English-only agent.', e.message.slice(0, 160));
+    agentId = await save(false);
   }
+  console.log(config.elevenlabs.agentId ? 'Updated agent' : 'Created agent', agentId);
   console.log(`\nAdd to .env:\nELEVENLABS_AGENT_ID=${agentId}`);
 })().catch((e) => { console.error('Setup failed:', e.message); process.exit(1); });
