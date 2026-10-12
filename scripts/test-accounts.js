@@ -13,6 +13,9 @@ const crypto = require('crypto');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'wm-acc-'));
 process.env.DATABASE_PATH = path.join(tmp, 't.db');
 process.env.DISABLE_WHATSAPP = '1';
+// Never send anything real: no WhatsApp credentials inside the test, even
+// when it runs in the production container.
+for (const k of ['WHATSAPP_TOKEN', 'WHATSAPP_PHONE_NUMBER_ID', 'ELEVENLABS_API_KEY']) delete process.env[k];
 process.env.EXPOSE_OTP_IN_DEV = '1';
 process.env.NODE_ENV = 'test';
 process.env.PUBLIC_BASE_URL = 'https://app.example.com';
@@ -22,6 +25,9 @@ process.env.APPLE_SERVICES_ID = 'ai.example.signin';
 process.env.APPLE_KEY_ID = 'KEY123';
 process.env.APPLE_PRIVATE_KEY = privateKey.export({ type: 'pkcs8', format: 'pem' }).replace(/\n/g, '\\n');
 
+const wa = require('../src/whatsapp/client');
+wa.ready = () => false;
+wa.sendOtp = async () => false;
 const db = require('../src/db');
 db.initSchema();
 const express = require('express');
