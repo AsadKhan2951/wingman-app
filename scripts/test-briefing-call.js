@@ -116,6 +116,23 @@ const check = (name, ok, extra = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  
   briefingCall.setEnabled(u.id, true);
   check('ELEVENLABS_CALLS off → no calls (voice notes only)', !briefingCall.shouldCall(users.getById(u.id)) && briefingCall.wantsVoice(users.getById(u.id)));
 
+  // 9. The user calls Wingman — identified by number, gets their own token.
+  const inb = await briefingCall.inbound({ caller_id: '+92 300 1112222', agent_id: 'agent_test', conversation_id: 'conv_in' });
+  const iv = inb.dynamic_variables || {};
+  check('inbound call: caller recognised by WhatsApp number', inb.type === 'conversation_initiation_client_data' && iv.user_name === 'Aamir' && iv.call_token.length >= 32);
+  const ia = await briefingCall.answer(iv.call_token, 'meri meetings?');
+  check('inbound call: questions answered from their data', /Aamir/.test(ia.answer || ''));
+  const nested = await briefingCall.inbound({ whatsapp: { whatsapp_user_id: '923001112222' } });
+  check('inbound call: number found in a nested payload too', nested.dynamic_variables.user_name === 'Aamir');
+  const stranger = await briefingCall.inbound({ caller_id: '+15550001111' });
+  check('unknown caller: no token, no data', stranger.dynamic_variables.call_token === '' && /sign up/.test(stranger.dynamic_variables.call_purpose));
+  convResult = { status: 'done', metadata: { call_duration_secs: 95 }, transcript: [{ role: 'user', message: 'thanks' }], analysis: { transcript_summary: 'Asked about meetings.' } };
+  sent.length = 0;
+  await briefingCall.runPoll();
+  const inNote = conversations.historyForUser(u.id, 3).pop();
+  check('inbound call ends → noted in history, nothing sent', /called me/.test(inNote.content) && sent.length === 0);
+  check('inbound calls never count as missed briefing calls', briefingCall.consecutiveMissed(users.getById(u.id)) === 0);
+
   console.log(fails ? `\n${fails} FAILED` : '\nall passed');
   process.exit(fails ? 1 : 0);
 })().catch((e) => { console.error(e); process.exit(1); });

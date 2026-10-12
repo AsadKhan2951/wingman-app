@@ -156,6 +156,7 @@ async function start(user, kind, { now = new Date() } = {}) {
       dynamicVariables: {
         user_name: firstName(user),
         briefing_kind: label(kind),
+        call_purpose: `You placed this call to deliver their ${label(kind)}. Open, then take them through it.`,
         briefing: el.forSpeech(text).slice(0, 6000),
         local_time: localTime(user, now),
         call_token: token,
@@ -186,13 +187,18 @@ async function finish(row, status, { duration = null, detail = '' } = {}) {
   const user = usersRepo.getById(row.user_id);
   if (!user) return;
 
+  if (row.kind === 'inbound' && status !== 'answered') return; // they hung up before talking — nothing to do
+
   if (status === 'answered') {
     // Keep it in the chat history so a later WhatsApp message can refer to it.
+    const what = row.kind === 'inbound'
+      ? `${user.name ? firstName(user) : 'You'} called me on WhatsApp`
+      : `I talked ${user.name ? firstName(user) : 'you'} through the ${label(row.kind)} on a call`;
     try {
       require('../db/conversations').logMessage({
         userId: user.id,
         role: 'assistant',
-        content: `📞 (Call) I talked ${user.name ? firstName(user) : 'you'} through the ${label(row.kind)} on a call (${Math.max(1, Math.round((duration || 0) / 60))} min).${detail ? ` Summary: ${detail}` : ''}`,
+        content: `📞 (Call) ${what} (${Math.max(1, Math.round((duration || 0) / 60))} min).${detail ? ` Summary: ${detail}` : ''}`,
         metadata: { direction: 'outbound', source: 'call', mediaType: 'call' },
       });
     } catch (_) { /* best-effort */ }
@@ -218,12 +224,17 @@ async function finish(row, status, { duration = null, detail = '' } = {}) {
 /** Scheduler (every minute): settle calls whose outcome is known. */
 async function runPoll() {
   if (!config.elevenlabs.enabled) return { checked: 0 };
-  const open = db.prepare("SELECT * FROM voice_calls WHERE status = 'calling' ORDER BY created_at LIMIT 20").all();
+  const open = db.prepare("SELECT * FROM voice_calls WHERE status IN ('calling', 'live') ORDER BY created_at LIMIT 20").all();
   let settled = 0;
   for (const row of open) {
     const ageMin = (Date.now() - Date.parse(String(row.created_at).replace(' ', 'T') + 'Z')) / 60000;
     try {
       if (!row.conversation_id) {
+        if (row.kind === 'inbound') {
+          // ElevenLabs didn't tell us the conversation id — nothing to poll.
+          if (ageMin > 60) { await finish(row, 'ended', { detail: 'inbound call (no conversation id)' }); settled += 1; }
+          continue;
+        }
         if (ageMin > 3) { await finish(row, 'failed', { detail: 'no conversation id' }); settled += 1; }
         continue;
       }
@@ -247,6 +258,98 @@ async function runPoll() {
     }
   }
   return { checked: open.length, settled };
+}
+
+// ── inbound calls (the user calls Wingman on WhatsApp) ─────────────────
+/** Find the caller's number in whatever shape ElevenLabs sends it. */
+function callerNumber(body) {
+  const KEYS = /^(caller_id|caller|from|whatsapp_user_id|wa_id|user_id|phone_number|caller_phone_number|user_phone)$/i;
+  const seen = new Set();
+  const walk = (o, depth) => {
+    if (!o || typeof o !== 'object' || depth > 4 || seen.has(o)) return null;
+    seen.add(o);
+    for (const [k, v] of Object.entries(o)) {
+      if (KEYS.test(k) && (typeof v === 'string' || typeof v === 'number')) {
+        const d = String(v).replace(/\D/g, '');
+        if (d.length >= 8) return d;
+      }
+    }
+    for (const v of Object.values(o)) {
+      const r = walk(v, depth + 1);
+      if (r) return r;
+    }
+    return null;
+  };
+  return walk(body, 0);
+}
+
+function withTimeout(promise, ms) {
+  return Promise.race([promise, new Promise((resolve) => setTimeout(() => resolve(null), ms))]);
+}
+
+/**
+ * ElevenLabs "conversation initiation" webhook for a call the USER placed to
+ * Wingman. Identify them by their WhatsApp number, hand the agent today's
+ * snapshot + a per-call token (so ask_wingman answers from THEIR data), and
+ * greet them by name in their language. Unknown callers get a polite agent
+ * with no data access. Must answer fast — the phone is already ringing.
+ */
+async function inbound(body = {}, { now = new Date() } = {}) {
+  const phone = callerNumber(body);
+  const user = phone ? usersRepo.getByPhone(phone) : null;
+  const convId = (body && (body.conversation_id || body.conversationId)) || null;
+
+  if (!user) {
+    console.log(`[briefingCall] inbound call from unknown number ${phone ? `…${phone.slice(-4)}` : '(none)'}`);
+    return {
+      type: 'conversation_initiation_client_data',
+      dynamic_variables: {
+        user_name: 'there',
+        briefing_kind: 'call',
+        call_purpose: "Someone who isn't signed up to Wingman called you. Be friendly, explain you're Wingman, an AI chief of staff on WhatsApp, and that they can sign up at imyourwingman.ai. You have no access to anyone's data on this call — never use ask_wingman.",
+        briefing: '',
+        local_time: '',
+        call_token: '',
+      },
+    };
+  }
+
+  // A light snapshot of today, if it can be built quickly; otherwise the
+  // agent simply asks Wingman for everything.
+  let text = '';
+  try {
+    const recent = db.prepare("SELECT briefing_text FROM voice_calls WHERE user_id = ? AND briefing_text IS NOT NULL AND briefing_text <> '' AND created_at > datetime('now', '-3 hours') ORDER BY created_at DESC LIMIT 1").get(user.id);
+    if (recent) text = recent.briefing_text;
+    else {
+      const built = await withTimeout(service('briefing').sendForUser(user.id, { now, send: false }), 5000);
+      text = (built && built.text) || '';
+    }
+  } catch (_) { /* fine — the agent can ask */ }
+
+  const token = crypto.randomBytes(18).toString('hex');
+  db.prepare("INSERT INTO voice_calls (id, user_id, kind, call_token, briefing_text, conversation_id, status) VALUES (?, ?, 'inbound', ?, ?, ?, 'live')")
+    .run(uuid(), user.id, token, text, convId);
+
+  let lang = 'en';
+  try { lang = await withTimeout(callLanguage(user), 2500) || 'en'; } catch (_) { /* English */ }
+  const name = firstName(user);
+  const first = lang === 'hi'
+    ? `Assalam o alaikum ${name}, Wingman bol raha hoon. Bataiye, kya kar sakta hoon?`
+    : `Hey ${name}, Wingman here. What can I do for you?`;
+  console.log(`[briefingCall] inbound call from ${user.id} (${lang})`);
+
+  return {
+    type: 'conversation_initiation_client_data',
+    dynamic_variables: {
+      user_name: name,
+      briefing_kind: 'snapshot of today',
+      call_purpose: "THEY called YOU. Greet them and help with whatever they ask. The notes below are today's snapshot for context — don't read them out unless they ask about their day.",
+      briefing: el.forSpeech(text).slice(0, 6000),
+      local_time: localTime(user, now),
+      call_token: token,
+    },
+    conversation_config_override: { agent: { first_message: first, language: lang } },
+  };
 }
 
 /** The agent asked Wingman something mid-call. */
@@ -280,5 +383,5 @@ async function sendVoiceNote(user, text) {
 
 module.exports = {
   isOn, setEnabled, wantsVoice, shouldCall, start, runPoll, answer, sendVoiceNote,
-  toolSecret, consecutiveMissed, wasAnswered, callLanguage,
+  toolSecret, consecutiveMissed, wasAnswered, callLanguage, inbound, callerNumber,
 };

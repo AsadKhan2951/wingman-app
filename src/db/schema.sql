@@ -645,10 +645,10 @@ CREATE TABLE IF NOT EXISTS inbound_seen (
 CREATE TABLE IF NOT EXISTS voice_calls (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,
-  kind TEXT NOT NULL,                  -- 'briefing' | 'wrap'
+  kind TEXT NOT NULL,                  -- 'briefing' | 'wrap' | 'inbound'
   conversation_id TEXT,
   call_token TEXT NOT NULL,            -- lets the agent's tool calls identify the user
-  status TEXT NOT NULL DEFAULT 'calling', -- calling | answered | missed | failed
+  status TEXT NOT NULL DEFAULT 'calling', -- calling | live (inbound) | answered | missed | failed | ended
   briefing_text TEXT,
   duration_secs INTEGER,
   detail TEXT,

@@ -589,6 +589,25 @@ app.post('/voice/tools/ask', async (req, res) => {
   }
 });
 
+// ElevenLabs "conversation initiation" webhook — the user called Wingman on
+// WhatsApp. Same shared-secret header as the tool above.
+app.post('/voice/inbound', async (req, res) => {
+  const briefingCall = require('./services/briefingCall');
+  const given = String(req.get('x-wingman-tool-secret') || '');
+  if (!require('./utils/linkSig').safeEqual(given, briefingCall.toolSecret())) {
+    return res.status(401).json({ error: 'unauthorized' });
+  }
+  try {
+    res.json(await briefingCall.inbound(req.body || {}));
+  } catch (e) {
+    console.warn('[voice/inbound] failed:', e.message);
+    res.json({
+      type: 'conversation_initiation_client_data',
+      dynamic_variables: { user_name: 'there', briefing_kind: 'call', call_purpose: 'They called you. Help as best you can; you could not load their data right now, so say so if they ask about it.', briefing: '', local_time: '', call_token: '' },
+    });
+  }
+});
+
 // ─── WhatsApp Cloud API webhook ─────────────────────────────────────
 //   GET  → Meta verification handshake (hub.challenge)
 //   POST → incoming messages: parse, run the engine, reply via Cloud API.
