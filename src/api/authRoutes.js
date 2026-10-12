@@ -120,16 +120,27 @@ router.post('/request-otp', async (req, res) => {
   }
 });
 
-/** Find-or-create the user for a verified phone and mint a session. */
-function signInPhone(phone) {
+/**
+ * Find-or-create the user for a verified phone and mint a session. With an
+ * account_token (signed up with email/Google/Apple, now verifying WhatsApp)
+ * the account is linked to this user.
+ */
+function signInPhone(phone, { accountToken = null } = {}) {
   let user = usersRepo.getByPhone(phone);
   if (!user) user = usersRepo.create({ phone });
+  let account = null;
+  if (accountToken) {
+    account = require('./accountRoutes').linkPendingAccount(accountToken, user);
+    user = usersRepo.getById(user.id) || user;
+  }
   const session = auth.createSession(user.id, { ttlDays: config.auth.sessionTtlDays });
   return {
+    status: 'signed_in',
     token: session.token,
     expires_at: session.expiresAt,
     user: usersRepo.toPublic(user),
     connect_sig: require('../utils/linkSig').connectSig(user.phone),
+    ...(account ? { account: require('../db/accounts').toPublic(account) } : {}),
   };
 }
 
@@ -168,7 +179,7 @@ router.post('/verify-otp', (req, res) => {
     return res.status(400).json({ error: map[result.reason] || 'Verification failed.', reason: result.reason });
   }
 
-  res.json(signInPhone(phone));
+  res.json(signInPhone(phone, { accountToken: body.account_token ? String(body.account_token) : null }));
 });
 
 // ── POST /api/auth/logout ─────────────────────────────────────────────
@@ -187,7 +198,12 @@ router.get('/me', (req, res) => {
   if (!userId) return res.status(401).json({ error: 'Not authenticated.' });
   const user = usersRepo.getById(userId);
   if (!user) return res.status(401).json({ error: 'Not authenticated.' });
-  res.json({ user: usersRepo.toPublic(user) });
+  let logins = [];
+  try { logins = require('../db/accounts').listForUser(user.id).map(require('../db/accounts').toPublic); } catch (_) { /* none */ }
+  res.json({ user: usersRepo.toPublic(user), accounts: logins });
 });
+
+// Email/password, Google and Apple sign-in live in accountRoutes.
+router.use('/', require('./accountRoutes'));
 
 module.exports = router;

@@ -158,6 +158,21 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
 
 const get = <T>(path: string) => req<T>('GET', path)
 
+export type AuthProviders = { email: boolean; google: boolean; apple: boolean; phone: boolean }
+export type AuthAccount = { id: string; email: string | null; name: string | null; linked: boolean }
+export type AuthResult =
+  | { status: 'signed_in'; token: string; user: Record<string, unknown>; connect_sig?: string; account?: AuthAccount }
+  | { status: 'needs_phone'; account_token: string; account: AuthAccount }
+
+async function authCall(path: string, body: unknown): Promise<AuthResult> {
+  const res = await req<AuthResult>('POST', path, body)
+  if (res.status === 'signed_in') {
+    setToken(res.token)
+    setConnectSig(res.connect_sig)
+  }
+  return res
+}
+
 export const api = {
   base: BASE,
 
@@ -174,12 +189,34 @@ export const api = {
     setConnectSig((res as { connect_sig?: string }).connect_sig)
     return res
   },
-  verifyOtp: async (phone: string, code: string) => {
-    const res = await req<{ token: string; user: unknown; connect_sig?: string }>('POST', '/auth/verify-otp', { phone, code })
+  // accountToken: from sign up (email / Google / Apple) — verifying the number
+  // links that account to the Wingman user.
+  verifyOtp: async (phone: string, code: string, accountToken?: string | null) => {
+    const res = await req<{ token: string; user: unknown; connect_sig?: string }>('POST', '/auth/verify-otp', {
+      phone,
+      code,
+      ...(accountToken ? { account_token: accountToken } : {}),
+    })
     if (res.token) setToken(res.token)
     setConnectSig(res.connect_sig)
     return res
   },
+
+  // ── Accounts: email + password, Google, Apple ──
+  // Every call answers AuthResult: signed in (token stored), or needs_phone
+  // (keep account_token and go verify the WhatsApp number).
+  authProviders: () => get<AuthProviders>('/auth/providers'),
+  signUp: (name: string, email: string, password: string) =>
+    authCall('/auth/signup', { name, email, password }),
+  logIn: (email: string, password: string) => authCall('/auth/login', { email, password }),
+  forgotPassword: (email: string) =>
+    req<{ sent: boolean; phone_hint?: string; dev_code?: string }>('POST', '/auth/forgot', { email }),
+  resetPassword: (email: string, code: string, password: string) =>
+    authCall('/auth/reset', { email, code, password }),
+  exchangeSignIn: (code: string) => authCall('/auth/exchange', { code }),
+  // Google / Apple: the browser goes to the provider and comes back to
+  // #/auth-callback?code=… (or ?error=…).
+  providerStartUrl: (provider: 'google' | 'apple') => `${BASE}/api/auth/${provider}/start`,
   authMe: () => get<{ user: unknown }>('/auth/me'),
   // Permanently delete the account and everything stored for it.
   deleteAccount: async () => {

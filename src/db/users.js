@@ -266,6 +266,7 @@ const USER_CHILD_TABLES = [
   'google_accounts', 'goals', 'agent_actions', 'credentials',
   'integration_actions', 'user_media', 'app_knowledge', 'user_rules', 'search_docs',
   'sessions', 'meeting_bots', 'pending_full_sends', 'held_messages', 'voice_calls',
+  'accounts',
 ];
 
 /** Hard-delete a user and everything referencing them (children first). */
@@ -318,6 +319,7 @@ function mergeDuplicatePhones() {
         // Keep the primary's OWN phone as-is (the most dialable of the group).
         for (const d of list.slice(1)) {
           try { db.prepare('UPDATE sessions SET user_id = ? WHERE user_id = ?').run(primary.id, d.id); } catch (_) { /* no sessions */ }
+          try { db.prepare('UPDATE accounts SET user_id = ? WHERE user_id = ?').run(primary.id, d.id); } catch (_) { /* no accounts */ }
           deleteUserCascade(d.id); deleted.add(d.id); removed++;
         }
       }
@@ -384,7 +386,7 @@ function toPublic(user) {
     office_address: user.office_address || null,
     // Never expose the stored password — only whether webmail is linked.
     voice_replies: user.voice_replies || 'on_voice',
-    voice_name: user.voice_name || 'george',
+    voice_name: user.voice_name || 'wingman',
     assistant_name: user.assistant_name || 'Wingman',
     webmail_connected: !!(user.webmail_address && user.webmail_password_enc),
     webmail_address: user.webmail_address || null,

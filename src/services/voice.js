@@ -25,8 +25,11 @@ function enabled() { return useEleven() || !!config.voice.apiKey; }
 // ── Voices ──────────────────────────────────────────────────────────────
 // Stock ElevenLabs voices every account has. `id` is what we store in
 // users.voice_name; `eleven` is the ElevenLabs voice id.
+// 'wingman' is Wingman's own voice (ELEVENLABS_VOICE_ID — the same voice the
+// calls use) and is what everyone hears unless they pick another one.
 const VOICE_OPTIONS = [
-  { id: 'george', eleven: 'JBFqnCBsd6RMkjVDRZzb', openai: 'fable', gender: 'male', label: 'Male — British, warm (default)' },
+  { id: 'wingman', eleven: null, openai: 'fable', gender: 'male', label: "Wingman's voice (default)" },
+  { id: 'george', eleven: 'JBFqnCBsd6RMkjVDRZzb', openai: 'fable', gender: 'male', label: 'Male — British, warm' },
   { id: 'daniel', eleven: 'onwK4e9ZLuTAKqWW03F9', openai: 'ballad', gender: 'male', label: 'Male — British, formal' },
   { id: 'brian', eleven: 'nPczCjzI2devNBz1zQrb', openai: 'onyx', gender: 'male', label: 'Male — deep' },
   { id: 'matilda', eleven: 'XrExE9yKIg1WjnStVfdQ', openai: 'nova', gender: 'female', label: 'Female — warm' },
@@ -35,16 +38,18 @@ const VOICE_OPTIONS = [
   { id: 'river', eleven: 'SAz9YHcvj6GT2YYXdXww', openai: 'alloy', gender: 'neutral', label: 'Neutral' },
 ];
 
-const DEFAULT_BY_GENDER = { male: 'george', female: 'matilda', neutral: 'river' };
+const DEFAULT_BY_GENDER = { male: 'wingman', female: 'matilda', neutral: 'river' };
 
-// Words people actually say, plus the old OpenAI voice names already stored
-// for existing users (so their choice carries over).
+// Words people actually say when asking for a voice.
 const VOICE_ALIASES = {
-  british: 'george', jarvis: 'george', butler: 'daniel', formal: 'daniel',
-  deep: 'brian', warm: 'matilda', soft: 'sarah', calm: 'george',
-  onyx: 'brian', echo: 'daniel', fable: 'george', ballad: 'daniel',
-  nova: 'matilda', shimmer: 'sarah', alloy: 'river',
+  default: 'wingman', normal: 'wingman', jeremy: 'wingman', jarvis: 'wingman', calm: 'wingman',
+  british: 'george', butler: 'daniel', formal: 'daniel',
+  deep: 'brian', warm: 'matilda', soft: 'sarah',
 };
+
+// Old OpenAI voice names still stored for existing users (most were just the
+// old default). They all fall back to Wingman's voice.
+const LEGACY_OPENAI = new Set(['onyx', 'echo', 'fable', 'ballad', 'nova', 'shimmer', 'alloy']);
 
 const byId = (id) => VOICE_OPTIONS.find((v) => v.id === id) || null;
 
@@ -61,8 +66,10 @@ function resolveVoice(input) {
 
 /** The voice option a user's replies are read in. */
 function voiceFor(user) {
-  const chosen = resolveVoice(user && user.voice_name);
-  return byId(chosen) || null; // null → the server default (ELEVENLABS_VOICE_ID)
+  const stored = String((user && user.voice_name) || '').trim().toLowerCase();
+  if (!stored || LEGACY_OPENAI.has(stored)) return null;
+  const v = byId(resolveVoice(stored));
+  return v && v.eleven ? v : null; // null → Wingman's voice (ELEVENLABS_VOICE_ID)
 }
 
 // ── Speech → text ───────────────────────────────────────────────────────

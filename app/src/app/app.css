@@ -5010,3 +5010,71 @@
 .wm-ap__acts .wg-options + .wg-btn {
   margin-top: var(--space-8);
 }
+
+/* ── Sign up / sign in (Auth.tsx) ───────────────────────────────────── */
+.wg-auth-actions {
+  gap: var(--space-12);
+  align-items: stretch;
+  align-self: stretch;
+  width: 100%;
+}
+.wg-auth-btn {
+  gap: var(--space-12);
+}
+.wg-auth-btn svg {
+  flex: none;
+}
+.wg-auth-btn--apple {
+  background: #000;
+  color: #fff;
+}
+.wg-auth-btn--apple:not(:disabled):active {
+  background: #222 !important;
+}
+:root[data-theme='dark'] .wg-auth-btn--apple {
+  background: #fff;
+  color: #000;
+}
+:root[data-theme='dark'] .wg-auth-btn--apple:not(:disabled):active {
+  background: #e6e6e6 !important;
+}
+.wg-auth-switch {
+  text-align: center;
+  font-size: 15px;
+  color: var(--muted);
+  margin: var(--space-4) 0 0;
+}
+.wg-auth-switch .wg-btn-text {
+  padding: 0;
+}
+.wg-auth-legal {
+  text-align: center;
+  font-size: 12px;
+  color: var(--muted);
+  margin: 0;
+}
+.wg-auth-legal a {
+  color: inherit;
+  text-decoration: underline;
+}
+.wg-auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+}
+.wg-auth-show {
+  padding: 0;
+  font-size: 13px;
+}
+.wg-auth-forgot {
+  align-self: flex-end;
+  padding: var(--space-4) var(--space-8);
+}
+/* Auth screens render their own panel; when nested inside the onboarding
+   panel they must fill it, not shrink-to-fit and centre. */
+.gh .wg-auth-root {
+  margin: 0;
+  max-width: none;
+  width: 100%;
+  flex: 1;
+}

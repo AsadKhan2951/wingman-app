@@ -6,7 +6,8 @@ import { useProfile, firstName } from '../data/store'
 import { signIn, signOut, startFresh } from '../data/session'
 import { resetProfile } from '../data/store'
 import { api, ApiError, setToken } from '../data/api'
-import { clearOnboardingState } from '../onboarding/shared'
+import { clearOnboardingState, getPendingAccount, setPendingAccount } from '../onboarding/shared'
+import { AuthScreens } from './Auth'
 import { confirmAction } from '../shell/confirm'
 import { t } from '../i18n'
 import { toast } from '../shell/toast'
@@ -107,7 +108,7 @@ export const Welcome = () => {
           <p className="wg-body">
             {hasName
               ? t("Everything is where you left it — what I remember, what's waiting on you, all of it. I just need to know it's you.")
-              : t('Sign in to your account, or create a new one to get started. Both take a WhatsApp code — no passwords.')}
+              : t('Sign in to your account, or create a new one to get started.')}
           </p>
         </div>
         <div className="wg-actions wg-actions--stack">
@@ -131,7 +132,9 @@ const ccOf = (phone: string) => {
 
 export const SignIn = () => {
   const profile = useProfile()
-  const [step, setStep] = useState<'phone' | 'verify'>('phone')
+  // 'auth' = Apple / Google / email / "WhatsApp number"; a signed-up account
+  // whose number isn't verified yet comes back straight to 'phone'.
+  const [step, setStep] = useState<'auth' | 'phone' | 'verify'>(() => (getPendingAccount() ? 'phone' : 'auth'))
   const [cc, setCc] = useState(() => ccOf(profile.phone))
   const [phone, setPhone] = useState('')
   const [code, setCode] = useState(['', '', '', '', '', ''])
@@ -170,7 +173,8 @@ export const SignIn = () => {
   const verify = async () => {
     setBusy(true)
     try {
-      await api.verifyOtp(phoneE164(), code.join('')) // stores the bearer token on success
+      await api.verifyOtp(phoneE164(), code.join(''), getPendingAccount()?.token) // stores the bearer token on success
+      setPendingAccount(null)
       signIn()
       navigate('home')
     } catch (e) {
@@ -179,6 +183,28 @@ export const SignIn = () => {
       setBusy(false)
     }
   }
+
+  if (step === 'auth')
+    return (
+      <AuthScreens
+        initialMode="signin"
+        onBack={() => navigate('welcome')}
+        onPhone={() => {
+          setPendingAccount(null)
+          setStep('phone')
+        }}
+        onResult={(res) => {
+          if (res.status === 'needs_phone') {
+            setPendingAccount({ token: res.account_token, name: res.account.name, email: res.account.email })
+            setStep('phone')
+            return
+          }
+          setPendingAccount(null)
+          signIn()
+          navigate('home')
+        }}
+      />
+    )
 
   if (step === 'verify')
     return (
@@ -224,8 +250,8 @@ export const SignIn = () => {
     <Step
       idx={0}
       title="What's your WhatsApp number?"
-      body="The same one you set me up with. I'll text a 6-digit code to check it's you."
-      back={() => navigate('welcome')}
+      body={getPendingAccount() ? "Wingman works on WhatsApp. I'll text you a 6-digit code there to connect it to your account." : "The same one you set me up with. I'll text a 6-digit code to check it's you."}
+      back={() => setStep('auth')}
       next={async () => { if (await send()) setStep('verify') }}
       nextLabel="Send my code"
       nextDisabled={!phoneValid || busy}

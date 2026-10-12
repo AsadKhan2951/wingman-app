@@ -44,15 +44,18 @@ const check = (name, ok, extra = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  
   const a = await voice.speak('Done ✅ *Meeting* set for 3pm https://x.y', { user: { voice_name: 'nova' } });
   const tts = reqs.find((r) => /text-to-speech/.test(r.url));
   check('reply spoken by ElevenLabs as Ogg voice note', a.mimeType === 'audio/ogg' && !!tts);
-  check('old "nova" users get the warm female voice (Matilda)', /XrExE9yKIg1WjnStVfdQ/.test(tts.url));
+  check('old OpenAI voice names → Wingman\'s own voice (no voice id override)', /JBFqnCBsd6RMkjVDRZzb|\/text-to-speech\/[^/?]+/.test(tts.url) && !/XrExE9yKIg1WjnStVfdQ/.test(tts.url));
   const body = JSON.parse(tts.opts.body);
   check('emoji / markdown / links stripped before speaking', !/[✅*]|https/.test(body.text), body.text);
 
   reqs.length = 0;
   await voice.speak('Hello', { user: {} });
-  check('no choice → default JARVIS-style voice (George)', /JBFqnCBsd6RMkjVDRZzb/.test(reqs[0].url));
+  check('no choice → Wingman\'s voice (ELEVENLABS_VOICE_ID)', reqs[0].url.includes('/text-to-speech/JBFqnCBsd6RMkjVDRZzb'));
+  reqs.length = 0;
+  await voice.speak('Hello', { user: { voice_name: 'matilda' } });
+  check('a voice the user picked is honoured', /XrExE9yKIg1WjnStVfdQ/.test(reqs[0].url));
 
-  check('"british" / "deep" / "female" resolve', voice.resolveVoice('british') === 'george' && voice.resolveVoice('deep') === 'brian' && voice.resolveVoice('female') === 'matilda');
+  check('"british" / "deep" / "female" resolve', voice.resolveVoice('british') === 'george' && voice.resolveVoice('jeremy') === 'wingman' && voice.resolveVoice('deep') === 'brian' && voice.resolveVoice('female') === 'matilda');
   check('voice notes only when they sent one (default)', voice.shouldSpeak({}, true) && !voice.shouldSpeak({}, false) && !voice.shouldSpeak({ voice_replies: 'off' }, true));
 
   console.log(fails ? `\n${fails} FAILED` : '\nall passed');

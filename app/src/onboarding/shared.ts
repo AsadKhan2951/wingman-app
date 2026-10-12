@@ -7,6 +7,7 @@ import { signIn } from '../data/session'
 export type Screen =
   | 'splash'
   | 'intro'
+  | 'auth'
   | 'phone'
   | 'verify'
   | 'name'
@@ -164,6 +165,40 @@ const loadOnboardingState = (): OnboardingState => {
   return s
 }
 
+/** Jump the (persisted) onboarding to a screen — used when a Google/Apple
+ *  sign-in comes back to #/auth-callback before the wizard is mounted. */
+export const setOnboardingScreen = (screen: Screen, patch: Partial<OnboardingState> = {}) => {
+  try {
+    const s = { ...loadOnboardingState(), ...patch, screen }
+    localStorage.setItem(PERSIST_KEY, JSON.stringify(s))
+  } catch {
+    /* ignore */
+  }
+}
+
+// ── Pending account: signed up (email / Google / Apple) but the WhatsApp
+// number isn't verified yet. Its token goes with /verify-otp to link them.
+const PENDING_KEY = 'wingman.pendingAccount'
+export type PendingAccount = { token: string; name?: string | null; email?: string | null }
+
+export const getPendingAccount = (): PendingAccount | null => {
+  try {
+    const raw = localStorage.getItem(PENDING_KEY)
+    return raw ? (JSON.parse(raw) as PendingAccount) : null
+  } catch {
+    return null
+  }
+}
+
+export const setPendingAccount = (p: PendingAccount | null) => {
+  try {
+    if (p) localStorage.setItem(PENDING_KEY, JSON.stringify(p))
+    else localStorage.removeItem(PENDING_KEY)
+  } catch {
+    /* ignore */
+  }
+}
+
 export const clearOnboardingState = () => {
   try {
     localStorage.removeItem(PERSIST_KEY)
@@ -275,7 +310,9 @@ export function useOnboarding() {
   const verifyCode = async (): Promise<string | null> => {
     setBusy(true)
     try {
-      const res = await api.verifyOtp(phoneE164(), state.code.join(''))
+      const pending = getPendingAccount()
+      const res = await api.verifyOtp(phoneE164(), state.code.join(''), pending?.token)
+      setPendingAccount(null)
       applySignedIn(res.user)
       return null
     } catch (e) {

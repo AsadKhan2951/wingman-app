@@ -32,6 +32,10 @@ import {
 import { SKILL_ICONS, SKILL_TONES } from './agent'
 import { t } from '../i18n'
 import { Switch } from '../shell/Switch'
+import { AuthScreens } from './Auth'
+import type { AuthResult } from '../data/api'
+import { getPendingAccount, setPendingAccount } from '../onboarding/shared'
+import { markOnboarded } from '../data/session'
 import illoChiefOfStaff from '../assets/illustrations/intro-1.svg'
 import illoQuietGuard from '../assets/illustrations/intro-2.svg'
 import illoWhatsApp from '../assets/illustrations/intro-3.svg'
@@ -131,8 +135,25 @@ export const Onboarding = ({ onDone }: { onDone: () => void }) => {
   const ob = useOnboarding()
   const {
     state, set, go, toggleSkill, toggleInterest, connect, fullPhone, phoneValid, codeComplete, nameValid, preview,
-    busy, sendCode, verifyCode, finish, openConnect, refreshConnections, locateMe,
+    busy, sendCode, verifyCode, finish, openConnect, refreshConnections, locateMe, applySignedIn,
   } = ob
+
+  // Account step (Apple / Google / email). New account → WhatsApp number next;
+  // an existing, already-linked account → straight in (or on to finish setup).
+  const onAuthResult = (res: AuthResult) => {
+    if (res.status === 'needs_phone') {
+      setPendingAccount({ token: res.account_token, name: res.account.name, email: res.account.email })
+      if (res.account.name && !state.name.trim()) set('name', res.account.name)
+      go('phone')
+      return
+    }
+    setPendingAccount(null)
+    applySignedIn(res.user)
+    if (res.user && (res.user as { onboarding_complete?: boolean | number }).onboarding_complete) {
+      markOnboarded()
+      onDone()
+    } else go('name')
+  }
   const { msg, show, toast } = useToast()
   const [locating, setLocating] = useState<'home' | 'office' | null>(null)
   const useMyLocation = async (which: 'home' | 'office') => {
@@ -210,7 +231,7 @@ export const Onboarding = ({ onDone }: { onDone: () => void }) => {
             </div>
             <button
               className="wg-btn full"
-              onClick={() => (pane < INTRO.length - 1 ? goPane(pane + 1) : go('phone'))}
+              onClick={() => (pane < INTRO.length - 1 ? goPane(pane + 1) : go('auth'))}
             >
               {pane < INTRO.length - 1 ? t('Next') : t('Get started')}
             </button>
@@ -218,11 +239,28 @@ export const Onboarding = ({ onDone }: { onDone: () => void }) => {
         </div>
       )}
 
+      {state.screen === 'auth' && (
+        <AuthScreens
+          initialMode="signup"
+          onResult={onAuthResult}
+          onPhone={() => {
+            setPendingAccount(null)
+            go('phone')
+          }}
+          onBack={() => go('intro')}
+        />
+      )}
+
       {state.screen === 'phone' && (
         <Step
           screen="phone"
-          title="What's your WhatsApp number?"
-          body="I'll text you a 6-digit code there to make sure it's you."
+          title={getPendingAccount() ? 'Now, your WhatsApp number' : "What's your WhatsApp number?"}
+          body={
+            getPendingAccount()
+              ? "Wingman works on WhatsApp. I'll text you a 6-digit code there to connect it to your account."
+              : "I'll text you a 6-digit code there to make sure it's you."
+          }
+          back={() => go('auth')}
           next={async () => {
             const err = await sendCode()
             if (err) toast(err)

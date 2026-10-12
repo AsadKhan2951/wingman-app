@@ -18,7 +18,7 @@ const voiceTools = [
           type: 'string',
           description:
             "Which voice to speak in: 'male', 'female' or 'neutral', or a style the user asked for " +
-            "('british', 'deep', 'soft', 'formal', 'jarvis'), or a voice name: george (British male, default), " +
+            "('british', 'deep', 'soft', 'formal'), or a voice name: wingman (Wingman's own voice, the default — use for 'normal'/'default'/'back to your voice'), george (British male), " +
             'daniel (British male, formal), brian (deep male), matilda (warm female), sarah (soft female), ' +
             'alice (British female), river (neutral).',
         },

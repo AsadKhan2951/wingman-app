@@ -657,3 +657,32 @@ CREATE TABLE IF NOT EXISTS voice_calls (
 );
 CREATE INDEX IF NOT EXISTS idx_voice_calls_user ON voice_calls(user_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_voice_calls_token ON voice_calls(call_token);
+
+-- ─── Accounts (sign up / sign in) ───────────────────────────────────
+-- A login identity: email + password, Google or Apple. user_id is set once the
+-- WhatsApp number is verified (users are keyed by phone). Several accounts may
+-- point at one user (e.g. Google and email for the same person).
+CREATE TABLE IF NOT EXISTS accounts (
+  id TEXT PRIMARY KEY,
+  email TEXT UNIQUE,
+  password_hash TEXT,
+  google_sub TEXT UNIQUE,
+  apple_sub TEXT UNIQUE,
+  name TEXT,
+  email_verified INTEGER DEFAULT 0,
+  user_id TEXT REFERENCES users(id),
+  created_at TEXT DEFAULT (datetime('now')),
+  last_login_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_accounts_user ON accounts(user_id);
+
+-- One-time tokens for accounts: 'pending' (signed up, phone not verified yet)
+-- and 'exchange' (Google/Apple redirect → app). Only a hash is stored.
+CREATE TABLE IF NOT EXISTS account_tokens (
+  token_hash TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL,
+  purpose TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  used INTEGER DEFAULT 0,
+  created_at TEXT DEFAULT (datetime('now'))
+);

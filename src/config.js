@@ -83,6 +83,30 @@ const config = {
       : (process.env.NODE_ENV !== 'production'),
   },
 
+  // Sign up / sign in (accounts): email + password always; Google and Apple
+  // when configured. After signing up, the WhatsApp number is verified by OTP
+  // and the account is linked to the Wingman user (users table, by phone).
+  signin: {
+    google: {
+      // A Google OAuth client with the "openid email profile" scopes only.
+      // Falls back to the main Google client (add the callback URL to it).
+      clientId: process.env.GOOGLE_SIGNIN_CLIENT_ID || process.env.GOOGLE_CLIENT_ID || '',
+      clientSecret: process.env.GOOGLE_SIGNIN_CLIENT_SECRET || process.env.GOOGLE_CLIENT_SECRET || '',
+      get enabled() {
+        return !!(process.env.GOOGLE_SIGNIN_CLIENT_ID || process.env.GOOGLE_SIGNIN_ENABLED === '1')
+          && !!(this.clientId && this.clientSecret);
+      },
+    },
+    apple: {
+      teamId: process.env.APPLE_TEAM_ID || '',
+      servicesId: process.env.APPLE_SERVICES_ID || '',   // e.g. ai.imyourwingman.signin
+      keyId: process.env.APPLE_KEY_ID || '',
+      // The .p8 key's contents; newlines may be written as \n in .env.
+      privateKey: String(process.env.APPLE_PRIVATE_KEY || '').replace(/\\n/g, '\n'),
+      get enabled() { return !!(this.teamId && this.servicesId && this.keyId && this.privateKey); },
+    },
+  },
+
   // Wingman's OWN WhatsApp number (the assistant's number users message).
   // Purely informational (shown in the UI); pairing is done via /admin/qr.
   // Also used for the sign-in "message Wingman" link (wa.me), so it defaults to

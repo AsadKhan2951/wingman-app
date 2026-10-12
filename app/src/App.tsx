@@ -4,6 +4,7 @@ import { FirstLight } from './onboarding/FirstLight'
 import { WingGlyph } from './onboarding/WingGlyph'
 import { Onboarding } from './app/Onboarding'
 import { Welcome, SignIn } from './app/SignIn'
+import { AuthCallback } from './app/Auth'
 import { Home } from './app/Home'
 import { Attention } from './app/Attention'
 import { InstantMeeting } from './app/InstantMeeting'
@@ -212,6 +213,7 @@ const OPEN_ROUTES = ['concepts', 'morning-paper', 'first-light']
 const Gate = ({ route }: { route: string }) => {
   const { onboarded, signedIn } = useSession()
   if (OPEN_ROUTES.includes(route)) return <Screen route={route} />
+  if (route.startsWith('auth-callback')) return <AuthCallback route={route} />
   // Not onboarded yet (brand new, OR verified-but-didn't-finish) → the wizard,
   // even when a token exists. This stops a refresh mid-onboarding from dropping
   // the user into Home with nothing saved.

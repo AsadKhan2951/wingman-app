@@ -142,6 +142,21 @@ webhook). Pass `{ urgent: true }` only for time-critical pings. Never call
 `cloudApi.sendText` for proactive messages — use `sendMessage` /
 `sendProactiveMessage`.
 
+**Accounts (sign up / sign in):** the app starts with an account — Apple,
+Google or email + password (`api/accountRoutes.js`, `db/accounts.js`, table
+`accounts`; passwords scrypt-hashed, one-time tokens stored hashed in
+`account_tokens`). A new account answers `needs_phone` + `account_token`; the app
+then verifies the WhatsApp number and passes `account_token` to `/verify-otp`,
+which links the account to the phone-keyed user (an existing WhatsApp user keeps
+all their data). Linked accounts answer `signed_in` with a session. Phone-only
+sign-in still works for old users. Forgot password sends the reset code to the
+account's WhatsApp. Google/Apple are redirect flows ending at
+`#/auth-callback?code=…` → `POST /api/auth/exchange`; Google never joins an
+email account whose address wasn't verified. Google is on with
+`GOOGLE_SIGNIN_CLIENT_ID` (or `GOOGLE_SIGNIN_ENABLED=1` to reuse the main client);
+Apple needs `APPLE_TEAM_ID`, `APPLE_SERVICES_ID`, `APPLE_KEY_ID`,
+`APPLE_PRIVATE_KEY`. `scripts/test-accounts.js` checks it all offline.
+
 **Sign-in:** `/api/auth/request-otp` sends the code itself — plain text inside
 the 24h window, otherwise the AUTHENTICATION template `wingman_login_otp`
 (`OTP_USE_TEMPLATE=1`). If it can't be sent it returns 503 with a clear error;
@@ -155,8 +170,10 @@ self-heal from the webhook via `upgradePhone`).
 (any Urdu-script transcript is rewritten to Roman Urdu by the cheap model), then
 handled exactly like typed text. Replies go back as a voice note too
 (`voice_replies`: `on_voice` default / `always` / `off`) in the user's chosen
-voice (`voice_name` — george, daniel, brian, matilda, sarah, alice, river; old
-OpenAI names map across). OpenAI is used only when there's no ElevenLabs key.
+voice. Default for everyone is Wingman's own voice — `ELEVENLABS_VOICE_ID`, the
+same voice as the calls — unless they asked for another (`voice_name`: george,
+daniel, brian, matilda, sarah, alice, river). Old OpenAI names fall back to the
+default. OpenAI is used only when there's no ElevenLabs key.
 `scripts/test-voice-chat.js` checks it offline.
 
 ### Voice briefings (ElevenLabs)
@@ -208,6 +225,7 @@ node scripts/test-whatsapp-window.js   # 24h window, held messages, sign-in by r
 node scripts/test-engine-offline.js    # approval gate, loop end, tool memory, caching (scripted model)
 node scripts/test-briefing-call.js     # voice briefings: calls, fallbacks, voice notes (fake ElevenLabs)
 node scripts/test-voice-chat.js        # chat voice notes on ElevenLabs (fake fetch)
+node scripts/test-accounts.js          # sign up / sign in / linking / reset (temp server)
 docker exec wingman node scripts/eval-live.js   # real model, fake data, temp DB (~cents)
 ```
 
