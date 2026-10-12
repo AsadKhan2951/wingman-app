@@ -314,14 +314,14 @@ async function inbound(body = {}, { now = new Date() } = {}) {
     };
   }
 
-  // A light snapshot of today, if it can be built quickly; otherwise the
-  // agent simply asks Wingman for everything.
+  // The phone is already ringing — answer within ~2s. Reuse a recent
+  // briefing if there is one; otherwise the agent asks Wingman for everything.
   let text = '';
   try {
-    const recent = db.prepare("SELECT briefing_text FROM voice_calls WHERE user_id = ? AND briefing_text IS NOT NULL AND briefing_text <> '' AND created_at > datetime('now', '-3 hours') ORDER BY created_at DESC LIMIT 1").get(user.id);
+    const recent = db.prepare("SELECT briefing_text FROM voice_calls WHERE user_id = ? AND briefing_text IS NOT NULL AND briefing_text <> '' AND created_at > datetime('now', '-6 hours') ORDER BY created_at DESC LIMIT 1").get(user.id);
     if (recent) text = recent.briefing_text;
     else {
-      const built = await withTimeout(service('briefing').sendForUser(user.id, { now, send: false }), 5000);
+      const built = await withTimeout(service('briefing').sendForUser(user.id, { now, send: false }), 1500);
       text = (built && built.text) || '';
     }
   } catch (_) { /* fine — the agent can ask */ }
@@ -331,7 +331,7 @@ async function inbound(body = {}, { now = new Date() } = {}) {
     .run(uuid(), user.id, token, text, convId);
 
   let lang = 'en';
-  try { lang = await withTimeout(callLanguage(user), 2500) || 'en'; } catch (_) { /* English */ }
+  try { lang = await withTimeout(callLanguage(user), 800) || 'en'; } catch (_) { /* English */ }
   const name = firstName(user);
   const first = lang === 'hi'
     ? `Assalam o alaikum ${name}, Wingman bol raha hoon. Bataiye, kya kar sakta hoon?`

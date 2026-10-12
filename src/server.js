@@ -593,10 +593,14 @@ app.post('/voice/tools/ask', async (req, res) => {
 // WhatsApp. Same shared-secret header as the tool above.
 app.post('/voice/inbound', async (req, res) => {
   const briefingCall = require('./services/briefingCall');
-  const given = String(req.get('x-wingman-tool-secret') || '');
+  // The secret may come as a header or as ?key= on the webhook URL (simpler to
+  // configure in ElevenLabs).
+  const given = String(req.get('x-wingman-tool-secret') || req.query.key || '');
   if (!require('./utils/linkSig').safeEqual(given, briefingCall.toolSecret())) {
+    console.warn(`[voice/inbound] 401 — secret missing/wrong (headers: ${Object.keys(req.headers).join(', ')})`);
     return res.status(401).json({ error: 'unauthorized' });
   }
+  console.log(`[voice/inbound] request: ${JSON.stringify(req.body || {}).slice(0, 400)}`);
   try {
     res.json(await briefingCall.inbound(req.body || {}));
   } catch (e) {

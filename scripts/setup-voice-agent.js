@@ -63,7 +63,9 @@ function agentBody(toolId, { withHindi = true } = {}) {
     tags: ['wingman'],
     conversation_config: {
       agent: {
-        first_message: "Hi {{user_name}}, it's Wingman. How can I help?",
+        // No variables here: if the start-of-call data ever fails to load, the call
+        // must still connect (each call overrides this greeting anyway).
+        first_message: "Hi, it's Wingman. How can I help?",
         language: 'en',
         dynamic_variables: {
           dynamic_variable_placeholders: {
@@ -137,5 +139,5 @@ function agentBody(toolId, { withHindi = true } = {}) {
   }
   console.log(config.elevenlabs.agentId ? 'Updated agent' : 'Created agent', agentId);
   if (!config.elevenlabs.agentId) console.log(`\nAdd to .env:\nELEVENLABS_AGENT_ID=${agentId}`);
-  console.log(`\nFor calls the user makes TO Wingman (ElevenLabs → Agents settings → conversation initiation webhook):\n  URL:    ${base}/voice/inbound\n  Header: X-Wingman-Tool-Secret = ${briefingCall.toolSecret()}`);
+  console.log(`\nFor calls the user makes TO Wingman (ElevenLabs → Agents settings → conversation initiation webhook):\n  URL:    ${base}/voice/inbound?key=${briefingCall.toolSecret()}\n  (no header or secret needed — the key is in the URL)`);
 })().catch((e) => { console.error('Setup failed:', e.message); process.exit(1); });
