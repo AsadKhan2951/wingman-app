@@ -116,10 +116,18 @@ const check = (name, ok, extra = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  
   briefingCall.setEnabled(u.id, true);
   check('ELEVENLABS_CALLS off → no calls (voice notes only)', !briefingCall.shouldCall(users.getById(u.id)) && briefingCall.wantsVoice(users.getById(u.id)));
 
+  // 9a. Inbound calls get an instant snapshot from synced data.
+  const soon = new Date(Date.now() + 60 * 60000).toISOString();
+  db.db.prepare("INSERT INTO calendar_events (id, user_id, title, start_time) VALUES ('ev1', ?, 'Design review with Sara', ?)").run(u.id, soon);
+  db.db.prepare("INSERT INTO tasks (id, user_id, title, due_date) VALUES ('t1', ?, 'Send invoice to Hemani', ?)").run(u.id, new Date().toISOString().slice(0, 10));
+  const snap = briefingCall.quickSnapshot(users.getById(u.id));
+  check('inbound snapshot has today\'s meetings + tasks (no API calls)', /Design review with Sara/.test(snap) && /Send invoice to Hemani/.test(snap), snap.split('\n')[0]);
+
   // 9. The user calls Wingman — identified by number, gets their own token.
   const inb = await briefingCall.inbound({ caller_id: '+92 300 1112222', agent_id: 'agent_test', conversation_id: 'conv_in' });
   const iv = inb.dynamic_variables || {};
   check('inbound call: caller recognised by WhatsApp number', inb.type === 'conversation_initiation_client_data' && iv.user_name === 'Aamir' && iv.call_token.length >= 32);
+  check('inbound call: agent gets the snapshot up front', /Design review with Sara/.test(iv.briefing));
   const ia = await briefingCall.answer(iv.call_token, 'meri meetings?');
   check('inbound call: questions answered from their data', /Aamir/.test(ia.answer || ''));
   const nested = await briefingCall.inbound({ whatsapp: { whatsapp_user_id: '923001112222' } });
@@ -132,6 +140,28 @@ const check = (name, ok, extra = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  
   const inNote = conversations.historyForUser(u.id, 3).pop();
   check('inbound call ends → noted in history, nothing sent', /called me/.test(inNote.content) && sent.length === 0);
   check('inbound calls never count as missed briefing calls', briefingCall.consecutiveMissed(users.getById(u.id)) === 0);
+
+  // 10. Wingman's memory goes into the call.
+  require('../src/db/userMemory').add(u.id, { fact: 'Prefers meetings after 11am', category: 'preference' });
+  const inb2 = await briefingCall.inbound({ caller_id: '923001112222' });
+  check('call gets Wingman\'s memory (facts + recent chat)', /after 11am/.test(inb2.dynamic_variables.brain) && /Them:|You:/.test(inb2.dynamic_variables.brain));
+
+  // 11. ~30 min before the briefing: refresh + pre-build for callers.
+  const pre = require('../src/services/preBriefing');
+  check('lead time wraps past midnight', pre.minus('10:00', 30) === '09:30' && pre.minus('00:10', 30) === '23:40');
+  users.update(u.id, { briefing_time: '10:00', debrief_time: '20:00', timezone: 'Asia/Karachi' });
+  briefingCall.setEnabled(u.id, true);
+  const nine35 = new Date('2026-10-13T04:35:00Z'); // 09:35 in Karachi
+  const ran = await pre.runDue({ now: nine35 });
+  const pu = users.getById(u.id);
+  check('pre-briefing refresh runs 30 min before briefing time', ran.some((r) => r.user === u.id && r.kind === 'briefing'));
+  check('…and pre-builds the briefing for callers', !!(pu.preferences.prebuilt && pu.preferences.prebuilt.text && pu.preferences.prebuilt.kind === 'briefing'));
+  const again = await pre.runDue({ now: new Date('2026-10-13T04:40:00Z') });
+  check('…only once a day', !again.some((r) => r.user === u.id));
+  calls.length = 0;
+  const startedAt = new Date(Date.parse(pu.preferences.prebuilt.at) + 30 * 60000);
+  await briefingCall.start(pu, 'briefing', { now: startedAt });
+  check('call at briefing time uses the pre-built briefing + memory', (calls[0].dynamicVariables.briefing || '').length > 20 && /after 11am/.test(calls[0].dynamicVariables.brain));
 
   console.log(fails ? `\n${fails} FAILED` : '\nall passed');
   process.exit(fails ? 1 : 0);

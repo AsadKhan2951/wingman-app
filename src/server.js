@@ -607,7 +607,7 @@ app.post('/voice/inbound', async (req, res) => {
     console.warn('[voice/inbound] failed:', e.message);
     res.json({
       type: 'conversation_initiation_client_data',
-      dynamic_variables: { user_name: 'there', briefing_kind: 'call', call_purpose: 'They called you. Help as best you can; you could not load their data right now, so say so if they ask about it.', briefing: '', local_time: '', call_token: '' },
+      dynamic_variables: { user_name: 'there', briefing_kind: 'call', call_purpose: 'They called you. Help as best you can; you could not load their data right now, so say so if they ask about it.', briefing: '', brain: '', local_time: '', call_token: '' },
     });
   }
 });

@@ -83,6 +83,9 @@ async function runBriefingTick(now = new Date()) {
   // person who somehow ends up with two rows can never receive two briefings or
   // two wraps.
   await step('merge duplicates', () => require('../db/users').mergeDuplicatePhones());
+  // ~30 min before each user's briefing/wrap: pull everything fresh (and
+  // pre-build the briefing for users who get a call).
+  await step('pre-briefing refresh', () => require('./preBriefing').runDue({ now, windowMin: 15 }));
   await step('morning briefing', () => morningBriefing.runDueUsers({ now, windowMin: 15 }));
   await step('end-of-day wrap', () => endOfDayWrap.runDueUsers({ now, windowMin: 15 }));
   // The cross-domain proactive nudge — gated to a couple of local hours and

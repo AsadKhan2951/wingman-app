@@ -179,6 +179,13 @@ webhook hits `POST /voice/inbound` (same secret header); `briefingCall.inbound`
 finds the user by caller number, creates a `voice_calls` row (`kind='inbound'`,
 `status='live'`) with a call token, and returns dynamic variables + greeting.
 Unknown callers get no token (no data). Inbound calls never count as misses.
+Every call (both directions) gets Wingman's memory as `{{brain}}`
+(`briefingCall.brainContext`: memory facts, profile card + app notes, standing
+rules, last chat messages) and, for inbound, an instant DB snapshot of today
+(`quickSnapshot`). `services/preBriefing.js` runs ~30 min before each user's
+briefing/wrap: syncs calendar, Gmail, Google Tasks, business mail, profile card
+and the search index, and pre-builds the briefing for callers
+(`preferences.prebuilt`) so the call starts instantly.
 WhatsApp only allows business-initiated calls from NON-US/Canada business
 numbers with a 2K+ messaging limit — the +1 number cannot place calls.
 `scripts/setup-voice-agent.js` creates/updates the agent; `scripts/test-voice.js`

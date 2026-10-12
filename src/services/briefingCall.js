@@ -133,12 +133,15 @@ function localTime(user, now = new Date()) {
  * normal text briefing instead.
  */
 async function start(user, kind, { now = new Date() } = {}) {
-  let text = '';
-  try {
-    const built = await service(kind).sendForUser(user.id, { now, send: false });
-    text = (built && built.text) || '';
-  } catch (e) {
-    return { started: false, error: `build failed: ${e.message}` };
+  // Built ~30 min ago by preBriefing (with fresh data) — else build it now.
+  let text = require('./preBriefing').prebuiltText(user, kind, { now });
+  if (!text) {
+    try {
+      const built = await service(kind).sendForUser(user.id, { now, send: false });
+      text = (built && built.text) || '';
+    } catch (e) {
+      return { started: false, error: `build failed: ${e.message}` };
+    }
   }
   if (!text) return { started: false, error: 'empty briefing' };
 
@@ -158,6 +161,7 @@ async function start(user, kind, { now = new Date() } = {}) {
         briefing_kind: label(kind),
         call_purpose: `You placed this call to deliver their ${label(kind)}. Open, then take them through it.`,
         briefing: el.forSpeech(text).slice(0, 6000),
+        brain: brainContext(user),
         local_time: localTime(user, now),
         call_token: token,
       },
@@ -283,6 +287,71 @@ function callerNumber(body) {
   return walk(body, 0);
 }
 
+/**
+ * Today at a glance, straight from what's already synced into our DB (no API
+ * calls — this must be instant). Lets the agent answer the common questions
+ * ("what's on today?", "anything urgent?") without a round trip to Wingman.
+ */
+function quickSnapshot(user, now = new Date()) {
+  const tz = user.timezone || 'Asia/Karachi';
+  const day = (d) => new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(d);
+  const time = (iso) => {
+    const d = new Date(iso);
+    return Number.isNaN(d.getTime()) ? '' : new Intl.DateTimeFormat('en-GB', { timeZone: tz, hour: 'numeric', minute: '2-digit' }).format(d);
+  };
+  const today = day(now);
+  const tomorrow = day(new Date(now.getTime() + 86400000));
+  const q = (sql, ...a) => { try { return db.prepare(sql).all(...a); } catch (_) { return []; } };
+  const lines = [];
+
+  const events = q("SELECT title, start_time, all_day, location FROM calendar_events WHERE user_id = ? AND (status IS NULL OR status <> 'cancelled') AND start_time >= ? AND start_time < ? ORDER BY start_time LIMIT 40",
+    user.id, new Date(now.getTime() - 86400000).toISOString().slice(0, 10), new Date(now.getTime() + 3 * 86400000).toISOString().slice(0, 10));
+  const evOn = (d) => events.filter((e) => e.start_time && day(new Date(e.start_time)) === d)
+    .map((e) => `${e.all_day ? 'all day' : time(e.start_time)} ${e.title || '(no title)'}${e.location ? ` @ ${e.location}` : ''}`);
+  const t1 = evOn(today); const t2 = evOn(tomorrow);
+  lines.push(`Meetings today: ${t1.length ? t1.join('; ') : 'none'}`);
+  if (t2.length) lines.push(`Meetings tomorrow: ${t2.join('; ')}`);
+
+  const tasks = q('SELECT title, due_date FROM tasks WHERE user_id = ? AND completed = 0 AND due_date IS NOT NULL AND substr(due_date, 1, 10) <= ? ORDER BY due_date LIMIT 15', user.id, tomorrow);
+  if (tasks.length) lines.push(`Tasks due (overdue/today/tomorrow): ${tasks.map((t) => `${t.title} (${String(t.due_date).slice(0, 10)})`).join('; ')}`);
+
+  const mails = q("SELECT sender, subject, summary FROM email_items WHERE user_id = ? AND action_needed = 1 AND replied = 0 AND created_at > datetime('now', '-4 days') ORDER BY created_at DESC LIMIT 8", user.id);
+  if (mails.length) lines.push(`Emails waiting on them: ${mails.map((m) => `${String(m.sender || '').replace(/<.*>/, '').trim()} — ${m.subject || ''}`).join('; ')}`);
+
+  const bills = q("SELECT name, amount, currency, due_date FROM bills WHERE user_id = ? AND status = 'pending' AND due_date IS NOT NULL AND substr(due_date, 1, 10) <= date('now', '+7 days') ORDER BY due_date LIMIT 8", user.id);
+  if (bills.length) lines.push(`Bills due soon: ${bills.map((b) => `${b.name} ${b.amount ? `${b.currency || ''} ${Math.round(b.amount)}` : ''} (${String(b.due_date).slice(0, 10)})`).join('; ')}`);
+
+  const fups = q("SELECT description, counterparty, due_date FROM followups WHERE user_id = ? AND status = 'open' ORDER BY due_date LIMIT 6", user.id);
+  if (fups.length) lines.push(`Open follow-ups: ${fups.map((f) => `${f.description}${f.counterparty ? ` (${f.counterparty})` : ''}`).join('; ')}`);
+
+  return lines.join('\n');
+}
+
+/**
+ * Wingman's own memory of this person, for the voice agent: the profile card,
+ * remembered facts, what it learned from their connected apps, their standing
+ * rules, and the last few chat messages. All local reads — instant.
+ */
+function brainContext(user, { maxChars = 9000 } = {}) {
+  const parts = [];
+  const safe = (fn) => { try { return fn() || ''; } catch (_) { return ''; } };
+
+  const facts = safe(() => require('../db/userMemory').listForUser(user.id, 40).map((f) => `- ${f.fact}`).join('\n'));
+  if (facts) parts.push(`What you've learned about them:\n${facts}`);
+
+  const apps = safe(() => require('./appStudy').knowledgeBlock(user)).trim();
+  if (apps) parts.push(apps.slice(0, 4000));
+
+  const rulesText = safe(() => require('../engine/brainExecutor').rulesBlock(user)).trim();
+  if (rulesText) parts.push(rulesText);
+
+  const chat = safe(() => require('../db/conversations').historyForUser(user.id, 12)
+    .map((m) => `${m.role === 'user' ? 'Them' : 'You'}: ${String(m.content || '').replace(/\s+/g, ' ').slice(0, 220)}`).join('\n'));
+  if (chat) parts.push(`Your latest WhatsApp chat with them:\n${chat}`);
+
+  return parts.join('\n\n').slice(0, maxChars);
+}
+
 function withTimeout(promise, ms) {
   return Promise.race([promise, new Promise((resolve) => setTimeout(() => resolve(null), ms))]);
 }
@@ -308,23 +377,21 @@ async function inbound(body = {}, { now = new Date() } = {}) {
         briefing_kind: 'call',
         call_purpose: "Someone who isn't signed up to Wingman called you. Be friendly, explain you're Wingman, an AI chief of staff on WhatsApp, and that they can sign up at imyourwingman.ai. You have no access to anyone's data on this call — never use ask_wingman.",
         briefing: '',
+        brain: '',
         local_time: '',
         call_token: '',
       },
     };
   }
 
-  // The phone is already ringing — answer within ~2s. Reuse a recent
-  // briefing if there is one; otherwise the agent asks Wingman for everything.
+  // The phone is already ringing — this must be instant, so it's built from
+  // data already synced into our DB (no API calls). Anything else, the agent
+  // asks Wingman for mid-call.
   let text = '';
-  try {
-    const recent = db.prepare("SELECT briefing_text FROM voice_calls WHERE user_id = ? AND briefing_text IS NOT NULL AND briefing_text <> '' AND created_at > datetime('now', '-6 hours') ORDER BY created_at DESC LIMIT 1").get(user.id);
-    if (recent) text = recent.briefing_text;
-    else {
-      const built = await withTimeout(service('briefing').sendForUser(user.id, { now, send: false }), 1500);
-      text = (built && built.text) || '';
-    }
-  } catch (_) { /* fine — the agent can ask */ }
+  try { text = quickSnapshot(user, now); } catch (_) { /* fine — the agent can ask */ }
+  // Today's briefing, if it was built in the last few hours.
+  const pre = require('./preBriefing').prebuiltText(user, null, { now, maxAgeMin: 6 * 60 });
+  if (pre) text = `${text}\n\nToday's briefing:\n${pre}`;
 
   const token = crypto.randomBytes(18).toString('hex');
   db.prepare("INSERT INTO voice_calls (id, user_id, kind, call_token, briefing_text, conversation_id, status) VALUES (?, ?, 'inbound', ?, ?, ?, 'live')")
@@ -345,6 +412,7 @@ async function inbound(body = {}, { now = new Date() } = {}) {
       briefing_kind: 'snapshot of today',
       call_purpose: "THEY called YOU. Greet them and help with whatever they ask. The notes below are today's snapshot for context — don't read them out unless they ask about their day.",
       briefing: el.forSpeech(text).slice(0, 6000),
+      brain: brainContext(user),
       local_time: localTime(user, now),
       call_token: token,
     },
@@ -383,5 +451,5 @@ async function sendVoiceNote(user, text) {
 
 module.exports = {
   isOn, setEnabled, wantsVoice, shouldCall, start, runPoll, answer, sendVoiceNote,
-  toolSecret, consecutiveMissed, wasAnswered, callLanguage, inbound, callerNumber,
+  toolSecret, consecutiveMissed, wasAnswered, callLanguage, inbound, callerNumber, quickSnapshot, brainContext,
 };

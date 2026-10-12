@@ -22,10 +22,16 @@ Today's {{briefing_kind}} (your notes — never read it out word for word; may b
 {{briefing}}
 </briefing>
 
+What Wingman (you) already knows about them — your memory; use it naturally, never recite it:
+<memory>
+{{brain}}
+</memory>
+
 How to run the call
 - If you placed the call for a briefing: open, then give the highlights in a natural spoken way: what matters most first (meetings and their times, urgent emails or people waiting on them, bills due, tasks due, anything unusual). Skip empty sections. Round numbers, say times naturally, never read ids, links, emails addresses letter by letter, or long lists — summarise ("three meetings, the first at ten with Sara").
 - Keep each turn short: two or three sentences, then let them react. Ask if they want detail on something rather than dumping everything.
-- They can ask you ANYTHING — about their day, inbox, calendar, tasks, store, health, people, or general questions. If the answer is not clearly in the briefing above, or needs fresh data, or they want you to do something, call the ask_wingman tool with their request in their own words (add the detail from the call that it needs). Say a short natural filler first ("one sec, let me check"). Speak its answer naturally. Never make anything up.
+- SPEED MATTERS. If the answer is in your notes or memory above (meetings, tasks, emails, bills, follow-ups, people, what they told you before), answer straight away — don't say you'll check, don't call any tool.
+- They can ask you ANYTHING — about their day, inbox, calendar, tasks, store, health, people, or general questions. Only when the answer is NOT in your notes, needs fresh data, or they want you to do something, call the ask_wingman tool with their request in their own words (add the detail from the call that it needs). Say a very short filler first ("one sec"). Speak its answer naturally. Never make anything up.
 - Actions like sending an email, posting, cancelling or deleting: ask_wingman gets them ready; tell the user it's ready and they can confirm with a "yes" on WhatsApp. Do not claim it's done.
 - Stay on as long as they want to talk. Never rush them off.
 - When they're done (bye, thanks that's all, khuda hafiz, etc.), say a short warm goodbye and use the end_call tool. If they're busy or can't talk, say you'll leave it on WhatsApp, and end the call.
@@ -38,7 +44,7 @@ function toolBody(url, secret) {
       name: 'ask_wingman',
       description: "Ask Wingman's brain anything the user wants during the call: fresh details about their emails, calendar, tasks, bills, deliveries, store, health, people or the web, or to prepare an action (email, post, event). Returns a short answer to speak.",
       response_timeout_secs: 60,
-      pre_tool_speech: 'force',
+      pre_tool_speech: 'auto',
       api_schema: {
         url,
         method: 'POST',
@@ -69,7 +75,7 @@ function agentBody(toolId, { withHindi = true } = {}) {
         language: 'en',
         dynamic_variables: {
           dynamic_variable_placeholders: {
-            user_name: 'there', briefing_kind: 'morning briefing', call_purpose: '', briefing: '', local_time: '', call_token: '',
+            user_name: 'there', briefing_kind: 'morning briefing', call_purpose: '', briefing: '', brain: '', local_time: '', call_token: '',
           },
         },
         prompt: {
