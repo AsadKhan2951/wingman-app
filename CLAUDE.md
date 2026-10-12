@@ -173,6 +173,12 @@ briefing" (app Profile screen, or the `set_briefing_call` brain tool; stored in
   approved from a call). The scheduler's minute tick polls the call: answered →
   a note in chat history; missed → normal text briefing (+ voice note). Calls
   pause after 2 misses in a row (Meta revokes permission after 4).
+Users can also CALL Wingman on WhatsApp (ElevenLabs imported the WABA with
+messaging OFF — messages still come to us). ElevenLabs' conversation-initiation
+webhook hits `POST /voice/inbound` (same secret header); `briefingCall.inbound`
+finds the user by caller number, creates a `voice_calls` row (`kind='inbound'`,
+`status='live'`) with a call token, and returns dynamic variables + greeting.
+Unknown callers get no token (no data). Inbound calls never count as misses.
 WhatsApp only allows business-initiated calls from NON-US/Canada business
 numbers with a 2K+ messaging limit — the +1 number cannot place calls.
 `scripts/setup-voice-agent.js` creates/updates the agent; `scripts/test-voice.js`

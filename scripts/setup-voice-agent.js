@@ -15,15 +15,15 @@ const briefingCall = require('../src/services/briefingCall');
 
 const LLM = process.env.ELEVENLABS_AGENT_LLM || 'claude-sonnet-4-5';
 
-const PROMPT = `You are Wingman, {{user_name}}'s AI chief of staff — calm, warm, sharp, a little witty, like a trusted human assistant (think JARVIS, not a call-centre bot). You are on a WhatsApp voice call that YOU placed to deliver their {{briefing_kind}}. Their local time now: {{local_time}}.
+const PROMPT = `You are Wingman, {{user_name}}'s AI chief of staff — calm, warm, sharp, a little witty, like a trusted human assistant (think JARVIS, not a call-centre bot). You are on a WhatsApp voice call with them. {{call_purpose}} Their local time now: {{local_time}}.
 
-Today's {{briefing_kind}} (your notes — never read it out word for word):
+Today's {{briefing_kind}} (your notes — never read it out word for word; may be empty):
 <briefing>
 {{briefing}}
 </briefing>
 
 How to run the call
-- Open, then give the highlights in a natural spoken way: what matters most first (meetings and their times, urgent emails or people waiting on them, bills due, tasks due, anything unusual). Skip empty sections. Round numbers, say times naturally, never read ids, links, emails addresses letter by letter, or long lists — summarise ("three meetings, the first at ten with Sara").
+- If you placed the call for a briefing: open, then give the highlights in a natural spoken way: what matters most first (meetings and their times, urgent emails or people waiting on them, bills due, tasks due, anything unusual). Skip empty sections. Round numbers, say times naturally, never read ids, links, emails addresses letter by letter, or long lists — summarise ("three meetings, the first at ten with Sara").
 - Keep each turn short: two or three sentences, then let them react. Ask if they want detail on something rather than dumping everything.
 - They can ask you ANYTHING — about their day, inbox, calendar, tasks, store, health, people, or general questions. If the answer is not clearly in the briefing above, or needs fresh data, or they want you to do something, call the ask_wingman tool with their request in their own words (add the detail from the call that it needs). Say a short natural filler first ("one sec, let me check"). Speak its answer naturally. Never make anything up.
 - Actions like sending an email, posting, cancelling or deleting: ask_wingman gets them ready; tell the user it's ready and they can confirm with a "yes" on WhatsApp. Do not claim it's done.
@@ -63,11 +63,11 @@ function agentBody(toolId, { withHindi = true } = {}) {
     tags: ['wingman'],
     conversation_config: {
       agent: {
-        first_message: "Hi {{user_name}}, it's Wingman with your {{briefing_kind}}. Shall I go through it?",
+        first_message: "Hi {{user_name}}, it's Wingman. How can I help?",
         language: 'en',
         dynamic_variables: {
           dynamic_variable_placeholders: {
-            user_name: 'there', briefing_kind: 'morning briefing', briefing: '', local_time: '', call_token: '',
+            user_name: 'there', briefing_kind: 'morning briefing', call_purpose: '', briefing: '', local_time: '', call_token: '',
           },
         },
         prompt: {
@@ -136,5 +136,6 @@ function agentBody(toolId, { withHindi = true } = {}) {
     agentId = await save(false);
   }
   console.log(config.elevenlabs.agentId ? 'Updated agent' : 'Created agent', agentId);
-  console.log(`\nAdd to .env:\nELEVENLABS_AGENT_ID=${agentId}`);
+  if (!config.elevenlabs.agentId) console.log(`\nAdd to .env:\nELEVENLABS_AGENT_ID=${agentId}`);
+  console.log(`\nFor calls the user makes TO Wingman (ElevenLabs → Agents settings → conversation initiation webhook):\n  URL:    ${base}/voice/inbound\n  Header: X-Wingman-Tool-Secret = ${briefingCall.toolSecret()}`);
 })().catch((e) => { console.error('Setup failed:', e.message); process.exit(1); });
