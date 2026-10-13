@@ -1,3 +1,4 @@
+import { openExternal } from '../native/platform'
 import { SetRow, SubScreen } from './SubScreen'
 import { IconWhatsapp } from './icons'
 import { help as helpSeed } from '../data/mock'
@@ -53,7 +54,7 @@ export const SettingsHelp = () => {
           tone="blue"
           name="Email support"
           value="help@wingman.app"
-          onTap={() => window.open('mailto:help@wingman.app', '_blank', 'noopener,noreferrer')}
+          onTap={() => openExternal('mailto:help@wingman.app')}
         />
       </div>
 

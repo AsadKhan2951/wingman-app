@@ -4,6 +4,7 @@ import { WingGlyph } from '../onboarding/WingGlyph'
 import { useCodeBoxes, useResendTimer, setPendingAccount, setOnboardingScreen } from '../onboarding/shared'
 import { signIn, markOnboarded, getSession } from '../data/session'
 import { navigate } from '../shell/nav'
+import { isNative, openExternal } from '../native/platform'
 import { api, ApiError } from '../data/api'
 import type { AuthProviders, AuthResult } from '../data/api'
 import { t } from '../i18n'
@@ -148,8 +149,12 @@ export const AuthScreens = ({
       onResult(await api.resetPassword(email.trim(), code.join(''), password))
     }, 'That code did not work.')
 
+  // Google refuses to sign in inside an app's web view, so the native app
+  // opens the system browser and the server sends it back via the app's URL
+  // scheme (handled in native/platform.ts).
   const startProvider = (p: 'google' | 'apple') => {
-    window.location.href = api.providerStartUrl(p)
+    if (isNative()) openExternal(`${api.providerStartUrl(p)}?app=1`)
+    else window.location.href = api.providerStartUrl(p)
   }
 
   // ── choose a method ──

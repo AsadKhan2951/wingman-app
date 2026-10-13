@@ -186,7 +186,18 @@ router.post('/reset', (req, res) => {
 // ── Google / Apple (OAuth redirect flows) ─────────────────────────────
 const base = () => String(config.publicBaseUrl || '').replace(/\/+$/, '');
 const callbackUrl = (p) => `${base()}/api/auth/${p}/callback`;
-const backToApp = (res, q) => res.redirect(`${base()}/#/auth-callback?${new URLSearchParams(q).toString()}`);
+// fromApp: started in the native app → hand back through its URL scheme.
+const backToApp = (res, q, fromApp = false) => res.redirect(fromApp
+  ? `${config.signin.appScheme}://auth-callback?${new URLSearchParams(q).toString()}`
+  : `${base()}/#/auth-callback?${new URLSearchParams(q).toString()}`);
+
+/** state = "<provider>" (web) or "<provider>:app" (native app). */
+function readState(state, provider) {
+  const v = verifyState(state);
+  if (v === provider) return { ok: true, fromApp: false };
+  if (v === `${provider}:app`) return { ok: true, fromApp: true };
+  return { ok: false, fromApp: false };
+}
 
 function jwtPayload(jwt) {
   try { return JSON.parse(Buffer.from(String(jwt).split('.')[1], 'base64url').toString('utf8')); } catch (_) { return null; }
@@ -213,28 +224,30 @@ function providerAccount(provider, { sub, email, emailVerified, name }) {
   return acc;
 }
 
-function finishProvider(res, acc) {
-  backToApp(res, { code: accounts.issueToken(acc.id, 'exchange', 5) });
+function finishProvider(res, acc, fromApp) {
+  backToApp(res, { code: accounts.issueToken(acc.id, 'exchange', 5) }, fromApp);
 }
 
 router.get('/google/start', (req, res) => {
   const g = config.signin.google;
-  if (!g.enabled) return backToApp(res, { error: 'Google sign-in isn\'t available yet.' });
+  const fromApp = req.query.app === '1';
+  if (!g.enabled) return backToApp(res, { error: 'Google sign-in isn\'t available yet.' }, fromApp);
   const q = new URLSearchParams({
     client_id: g.clientId,
     redirect_uri: callbackUrl('google'),
     response_type: 'code',
     scope: 'openid email profile',
     prompt: 'select_account',
-    state: signState('google'),
+    state: signState(fromApp ? 'google:app' : 'google'),
   });
   res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${q}`);
 });
 
 router.get('/google/callback', async (req, res) => {
   const g = config.signin.google;
-  if (verifyState(req.query.state) !== 'google') return backToApp(res, { error: 'Sign-in expired. Please try again.' });
-  if (!req.query.code) return backToApp(res, { error: 'Google sign-in was cancelled.' });
+  const st = readState(req.query.state, 'google');
+  if (!st.ok) return backToApp(res, { error: 'Sign-in expired. Please try again.' });
+  if (!req.query.code) return backToApp(res, { error: 'Google sign-in was cancelled.' }, st.fromApp);
   try {
     const r = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
@@ -248,10 +261,10 @@ router.get('/google/callback', async (req, res) => {
     // Straight from Google's token endpoint over TLS, so the id_token is trusted (OIDC §3.1.3.7).
     const p = r.ok ? jwtPayload(data.id_token) : null;
     if (!p || !p.sub) throw new Error(data.error_description || data.error || 'no id_token');
-    finishProvider(res, providerAccount('google', { sub: p.sub, email: p.email, emailVerified: p.email_verified === true || p.email_verified === 'true', name: p.name }));
+    finishProvider(res, providerAccount('google', { sub: p.sub, email: p.email, emailVerified: p.email_verified === true || p.email_verified === 'true', name: p.name }), st.fromApp);
   } catch (e) {
     console.warn('[account] google sign-in failed:', e.message);
-    backToApp(res, { error: 'Google sign-in failed. Please try again.' });
+    backToApp(res, { error: 'Google sign-in failed. Please try again.' }, st.fromApp);
   }
 });
 
@@ -266,14 +279,15 @@ function appleClientSecret() {
 
 router.get('/apple/start', (req, res) => {
   const a = config.signin.apple;
-  if (!a.enabled) return backToApp(res, { error: 'Apple sign-in isn\'t available yet.' });
+  const fromApp = req.query.app === '1';
+  if (!a.enabled) return backToApp(res, { error: 'Apple sign-in isn\'t available yet.' }, fromApp);
   const q = new URLSearchParams({
     client_id: a.servicesId,
     redirect_uri: callbackUrl('apple'),
     response_type: 'code',
     response_mode: 'form_post',
     scope: 'name email',
-    state: signState('apple'),
+    state: signState(fromApp ? 'apple:app' : 'apple'),
   });
   res.redirect(`https://appleid.apple.com/auth/authorize?${q}`);
 });
@@ -281,8 +295,9 @@ router.get('/apple/start', (req, res) => {
 router.post('/apple/callback', express.urlencoded({ extended: false }), async (req, res) => {
   const a = config.signin.apple;
   const body = req.body || {};
-  if (verifyState(body.state) !== 'apple') return backToApp(res, { error: 'Sign-in expired. Please try again.' });
-  if (!body.code) return backToApp(res, { error: 'Apple sign-in was cancelled.' });
+  const st = readState(body.state, 'apple');
+  if (!st.ok) return backToApp(res, { error: 'Sign-in expired. Please try again.' });
+  if (!body.code) return backToApp(res, { error: 'Apple sign-in was cancelled.' }, st.fromApp);
   try {
     const r = await fetch('https://appleid.apple.com/auth/token', {
       method: 'POST',
@@ -301,10 +316,10 @@ router.post('/apple/callback', express.urlencoded({ extended: false }), async (r
       const u = typeof body.user === 'string' ? JSON.parse(body.user) : body.user;
       name = [u && u.name && u.name.firstName, u && u.name && u.name.lastName].filter(Boolean).join(' ') || null;
     } catch (_) { /* no name */ }
-    finishProvider(res, providerAccount('apple', { sub: p.sub, email: p.email, emailVerified: p.email_verified === true || p.email_verified === 'true', name }));
+    finishProvider(res, providerAccount('apple', { sub: p.sub, email: p.email, emailVerified: p.email_verified === true || p.email_verified === 'true', name }), st.fromApp);
   } catch (e) {
     console.warn('[account] apple sign-in failed:', e.message);
-    backToApp(res, { error: 'Apple sign-in failed. Please try again.' });
+    backToApp(res, { error: 'Apple sign-in failed. Please try again.' }, st.fromApp);
   }
 });
 

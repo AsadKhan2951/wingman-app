@@ -5,6 +5,7 @@ import { WingGlyph } from './onboarding/WingGlyph'
 import { Onboarding } from './app/Onboarding'
 import { Welcome, SignIn } from './app/SignIn'
 import { AuthCallback } from './app/Auth'
+import { isNative } from './native/platform'
 import { Home } from './app/Home'
 import { Attention } from './app/Attention'
 import { InstantMeeting } from './app/InstantMeeting'
@@ -291,7 +292,7 @@ const App = () => {
     <AppShell>
       <ScreenStack route={route} dir={dir} stackRef={dragScrollRef} render={(r) => <Gate route={r} />} />
       {signedIn && <AppChrome route={inApp ? route : lastTab.current} open={inApp} />}
-      {inApp && splashDone && <InstallPrompt />}
+      {inApp && splashDone && !isNative() && <InstallPrompt />}
       {}
       <ApprovalHost />
       <ConnectHost />

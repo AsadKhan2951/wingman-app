@@ -129,6 +129,14 @@ const check = (name, ok, extra = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  
   const as = await fetch(`${base}/apple/start`, { redirect: 'manual' });
   check('Apple on → redirects to appleid.apple.com', as.status === 302 && /^https:\/\/appleid\.apple\.com\/auth\/authorize/.test(as.headers.get('location')));
 
+  // 9b. Started from the native app → comes back through the app's URL scheme.
+  const asApp = await fetch(`${base}/apple/start?app=1`, { redirect: 'manual' });
+  const appState = new URL(asApp.headers.get('location')).searchParams.get('state');
+  const cbApp = await fetch(`${base}/apple/callback`, { method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ state: appState }) });
+  check('native app sign-in → back via ai.imyourwingman.app://', cbApp.status === 302 && /^ai\.imyourwingman\.app:\/\/auth-callback\?error=/.test(cbApp.headers.get('location')));
+  const gsApp = await fetch(`${base}/google/start?app=1`, { redirect: 'manual' });
+  check('…and an error from the native app also goes back to the app', /^ai\.imyourwingman\.app:\/\/auth-callback\?error=/.test(gsApp.headers.get('location')));
+
   // 10. Deleting a user removes their logins.
   users.deleteUserCascade(old.id);
   check('account deletion removes the logins too', !accounts.getByEmail('sara@example.com'));

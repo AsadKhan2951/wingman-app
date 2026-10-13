@@ -1,3 +1,4 @@
+import { openExternal } from '../native/platform'
 import { SetRow, SubScreen } from './SubScreen'
 import { Icon, IconSpark } from './icons'
 import { privacy as privacySeed } from '../data/mock'
@@ -45,7 +46,7 @@ export const SettingsPrivacy = () => {
 
   const openPolicy = () => {
     tapQuiet()
-    window.open(PRIVACY_POLICY_URL, '_blank', 'noopener,noreferrer')
+    openExternal(PRIVACY_POLICY_URL)
   }
 
   const deleteAccount = async () => {

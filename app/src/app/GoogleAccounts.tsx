@@ -1,3 +1,4 @@
+import { openExternal } from '../native/platform'
 import { useEffect, useState } from 'react'
 import { SubScreen } from './SubScreen'
 import { Icon, IconPlus, IconGmailBrand } from './icons'
@@ -35,7 +36,7 @@ export const GoogleAccounts = () => {
       toast(t('Sign in first.'))
       return
     }
-    window.open(api.googleConnectUrl(phone), '_blank', 'noopener,noreferrer')
+    openExternal(api.googleConnectUrl(phone))
     toast(t('Pick the account to add, then come back here.'))
   }
 

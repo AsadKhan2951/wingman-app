@@ -1,3 +1,4 @@
+import { openExternal } from '../native/platform'
 import { channel } from '../data/mock'
 
 
@@ -9,5 +10,5 @@ export const whatsappLink = (text?: string) => {
 }
 
 export const openWhatsApp = (text?: string) => {
-  window.open(whatsappLink(text), '_blank', 'noopener,noreferrer')
+  openExternal(whatsappLink(text))
 }

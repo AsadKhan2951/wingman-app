@@ -34,9 +34,10 @@ src/
   admin/qr.js      browser-based WhatsApp pairing page
 
 app/               PRIMARY web UI (Vite PWA)  ← served at / when built
+                   + the iOS/Android apps (Capacitor: app/ios, app/android — see app/MOBILE.md)
 client/            LEGACY dashboard (Vite + Tailwind) ← fallback only
 landing/           marketing site
-mobile/            mobile shell
+mobile/            OLD React Native experiment — superseded by Capacitor (app/MOBILE.md)
 bot-worker/        separate container: meeting notetaker bot (own Dockerfile)
 scripts/           ad-hoc test scripts (test-*.js) — NOT a test suite
 data/              SQLite DB lives here (gitignored)

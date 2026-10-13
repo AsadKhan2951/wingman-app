@@ -87,6 +87,9 @@ const config = {
   // when configured. After signing up, the WhatsApp number is verified by OTP
   // and the account is linked to the Wingman user (users table, by phone).
   signin: {
+    // The native app's URL scheme: Google/Apple sign-ins started from the app
+    // (…/start?app=1) are sent back to <scheme>://auth-callback?code=…
+    appScheme: process.env.APP_URL_SCHEME || 'ai.imyourwingman.app',
     google: {
       // A Google OAuth client with the "openid email profile" scopes only.
       // Falls back to the main Google client (add the callback URL to it).

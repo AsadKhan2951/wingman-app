@@ -1,3 +1,4 @@
+import { openExternal } from '../native/platform'
 import { useEffect, useRef, useState } from 'react'
 import type { IconName } from '../app/icons'
 import { api, ApiError } from '../data/api'
@@ -386,7 +387,7 @@ export function useOnboarding() {
   // Health/Shopify keep the local mark for now (wired in the connections step).
   const openConnect = (service: string) => {
     if (service === 'Google Calendar' || service === 'Gmail') {
-      window.open(api.googleConnectUrl(phoneE164()), '_blank', 'noopener,noreferrer')
+      openExternal(api.googleConnectUrl(phoneE164()))
       return
     }
     connect(service)
@@ -529,7 +530,7 @@ export function useWhatsAppSignIn(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [secret, phone])
   const open = () => {
-    if (req?.wa_link) window.open(req.wa_link, '_blank', 'noopener,noreferrer')
+    if (req?.wa_link) openExternal(req.wa_link)
     setOpened(true)
   }
   return { available: !!req?.wa_link, needed: !!req && !req.delivered, opened, open }

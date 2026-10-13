@@ -1,3 +1,4 @@
+import { openExternal } from '../native/platform'
 import { useSyncExternalStore } from 'react'
 import { Icon, IconCheckCircle, ConnectorMark } from './icons'
 import { useConnections } from '../data/connections'
@@ -41,7 +42,7 @@ export const ConnectHost = () => {
     if (pending.key === 'gmail' || pending.key === 'gcal') {
       const phone = (getProfile().phone || '').replace(/\D/g, '')
       close()
-      window.open(api.googleConnectUrl(phone), '_blank', 'noopener')
+      openExternal(api.googleConnectUrl(phone))
       toast(t('Opening Google sign-in — approve access, then come back.'))
       return
     }
