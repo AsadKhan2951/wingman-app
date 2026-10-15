@@ -96,7 +96,11 @@ const managementToolNames = new Set(managementTools.map((t) => t.name));
  * conversation loop uses to route a tool_use block to integrationExecutor.
  */
 async function integrationToolsForUser(user) {
-  if (!config.composio.enabled) return { tools: [], names: new Set() };
+  if (!config.composio.enabled) {
+    // Only the yes/no tools, for built-in actions that always wait (rides).
+    const tools = managementTools.filter((t) => t.name === 'approve_integration_action' || t.name === 'cancel_integration_action');
+    return { tools, names: new Set(tools.map((t) => t.name)) };
+  }
   const appTools = await composio.toolsForUser(user); // never throws
   const tools = [...managementTools, ...appTools];
   return { tools, names: new Set(tools.map((t) => t.name)) };

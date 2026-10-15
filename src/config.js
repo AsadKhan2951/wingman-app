@@ -285,8 +285,23 @@ const config = {
     // How long to wait for a call's outcome before falling back to text + voice.
     callTimeoutMinutes: parseInt(process.env.ELEVENLABS_CALL_TIMEOUT_MINUTES, 10) || 40,
     get enabled() { return !!process.env.ELEVENLABS_API_KEY; },
+    // How briefing calls reach the user:
+    //   'whatsapp' (default) — WhatsApp call; Meta only allows this from a
+    //       NON-US/Canada business number with a 2K+ messaging limit.
+    //   'phone' — a normal phone call to the user's number through a Twilio
+    //       number imported into ElevenLabs (no Meta rules, any country).
+    get callChannel() { return process.env.ELEVENLABS_CALL_CHANNEL === 'phone' ? 'phone' : 'whatsapp'; },
+    // ElevenLabs' id for the imported Twilio number (Agents → Phone Numbers).
+    phoneNumberId: process.env.ELEVENLABS_PHONE_NUMBER_ID || '',
+    // Ring this long before counting the call as missed (phone channel).
+    ringSeconds: parseInt(process.env.ELEVENLABS_RING_SECONDS, 10) || 45,
+    // On a call, wait this long for Wingman's answer; longer lookups run in the
+    // background while the agent keeps talking (briefingCall.ask / result).
+    toolBudgetMs: parseInt(process.env.ELEVENLABS_TOOL_BUDGET_MS, 10) || 6000,
     get callsReady() {
-      return !!(process.env.ELEVENLABS_API_KEY && process.env.ELEVENLABS_AGENT_ID && process.env.ELEVENLABS_CALLS === '1');
+      const base = !!(process.env.ELEVENLABS_API_KEY && process.env.ELEVENLABS_AGENT_ID && process.env.ELEVENLABS_CALLS === '1');
+      if (!base) return false;
+      return process.env.ELEVENLABS_CALL_CHANNEL === 'phone' ? !!process.env.ELEVENLABS_PHONE_NUMBER_ID : true;
     },
   },
 
@@ -307,6 +322,29 @@ const config = {
   maps: {
     apiKey: process.env.MAPS_API_KEY || process.env.GOOGLE_MAPS_API_KEY || '',
     get enabled() { return !!(process.env.MAPS_API_KEY || process.env.GOOGLE_MAPS_API_KEY); },
+  },
+
+  // Uber — Guest Rides API (Uber for Business). Wingman books a ride for the
+  // user on the business account (the business pays; the rider gets Uber's SMS
+  // too). Needs Uber to grant the app the `guests.trips` scope.
+  //   UBER_SANDBOX=1 → sandbox-api.uber.com (fake trips, for testing)
+  //   UBER_ORG_ID    → sent as x-uber-organizationuuid (third-party apps)
+  uber: {
+    clientId: process.env.UBER_CLIENT_ID || '',
+    clientSecret: process.env.UBER_CLIENT_SECRET || '',
+    orgId: process.env.UBER_ORG_ID || '',
+    sandbox: process.env.UBER_SANDBOX === '1',
+    get baseUrl() {
+      return process.env.UBER_BASE_URL || (process.env.UBER_SANDBOX === '1' ? 'https://sandbox-api.uber.com' : 'https://api.uber.com');
+    },
+    authUrl: process.env.UBER_AUTH_URL || 'https://auth.uber.com/oauth/v2/token',
+    scope: process.env.UBER_SCOPE || 'guests.trips',
+    // How often active rides are polled for status (webhooks also nudge it).
+    pollSeconds: parseInt(process.env.UBER_POLL_SECONDS, 10) || 20,
+    // A booking waits for the user's yes; if the fare moved more than this
+    // much since they saw it, ask again instead of booking.
+    maxFareRise: parseFloat(process.env.UBER_MAX_FARE_RISE) || 0.15,
+    get enabled() { return !!(process.env.UBER_CLIENT_ID && process.env.UBER_CLIENT_SECRET); },
   },
 
   // App study — Wingman reads each connected app (read-only) and keeps its own

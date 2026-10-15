@@ -31,20 +31,22 @@ How to run the call
 - If you placed the call for a briefing: open, then give the highlights in a natural spoken way: what matters most first (meetings and their times, urgent emails or people waiting on them, bills due, tasks due, anything unusual). Skip empty sections. Round numbers, say times naturally, never read ids, links, emails addresses letter by letter, or long lists — summarise ("three meetings, the first at ten with Sara").
 - Keep each turn short: two or three sentences, then let them react. Ask if they want detail on something rather than dumping everything.
 - SPEED MATTERS. If the answer is in your notes or memory above (meetings, tasks, emails, bills, follow-ups, people, what they told you before), answer straight away — don't say you'll check, don't call any tool.
-- They can ask you ANYTHING — about their day, inbox, calendar, tasks, store, health, people, or general questions. Only when the answer is NOT in your notes, needs fresh data, or they want you to do something, call the ask_wingman tool with their request in their own words (add the detail from the call that it needs). Say a very short filler first ("one sec"). Speak its answer naturally. Never make anything up.
+- They can ask you ANYTHING — about their day, inbox, calendar, tasks, store, health, people, or general questions. Only when the answer is NOT in your notes, needs fresh data, or they want you to do something, call the ask_wingman tool with their request in their own words (add the detail from the call that it needs). Speak its answer naturally. Never make anything up.
+- NEVER GO QUIET — talk like a human assistant, not a machine that freezes. Before a lookup, say one short natural line in the same breath ("Haan, dekhta hoon Abu Dhabi ki flights..."). If ask_wingman comes back with status "working", the lookup is still running in the background: keep the conversation going — ask ONE useful related question that helps (flights → which date, morning or evening, airline preference, where they're staying; hotels → which area, budget; a meeting → who's joining), or mention something relevant from your notes. After they reply, call wingman_result to get the answer. If it's still working, keep chatting naturally and try again after the next exchange. Never say "please hold" or "processing". If they add details (e.g. the area of the city), call ask_wingman again with the fuller request.
+- If the call is ending while something is still being looked up, tell them you'll send it on WhatsApp — Wingman does that automatically.
 - Actions like sending an email, posting, cancelling or deleting: ask_wingman gets them ready; tell the user it's ready and they can confirm with a "yes" on WhatsApp. Do not claim it's done.
 - Stay on as long as they want to talk. Never rush them off.
 - When they're done (bye, thanks that's all, khuda hafiz, etc.), say a short warm goodbye and use the end_call tool. If they're busy or can't talk, say you'll leave it on WhatsApp, and end the call.
 - Language: match how they speak. If they speak Urdu or Hindi or mix it with English, reply in natural everyday Urdu-English mix (the way people in Pakistan talk), never formal or Sanskrit-heavy Hindi. Otherwise speak English.`;
 
-function toolBody(url, secret) {
+function askToolBody(url, secret) {
   return {
     tool_config: {
       type: 'webhook',
       name: 'ask_wingman',
-      description: "Ask Wingman's brain anything the user wants during the call: fresh details about their emails, calendar, tasks, bills, deliveries, store, health, people or the web, or to prepare an action (email, post, event). Returns a short answer to speak.",
-      response_timeout_secs: 60,
-      pre_tool_speech: 'auto',
+      description: "Ask Wingman's brain anything the user wants during the call: fresh details about their emails, calendar, tasks, bills, deliveries, store, health, people or the web (flights, hotels, news…), or to prepare an action (email, post, event). Returns { answer } to speak — or, for a longer lookup, { status: 'working', job_id }: keep talking and fetch it with wingman_result.",
+      response_timeout_secs: 20,
+      pre_tool_speech: 'force',
       api_schema: {
         url,
         method: 'POST',
@@ -63,7 +65,48 @@ function toolBody(url, secret) {
   };
 }
 
-function agentBody(toolId, { withHindi = true } = {}) {
+function resultToolBody(url, secret) {
+  return {
+    tool_config: {
+      type: 'webhook',
+      name: 'wingman_result',
+      description: "Get the answer to a lookup that ask_wingman said is still 'working'. Call it after the user's next reply. Returns { answer } — or { status: 'working' } again, then keep chatting and retry after another exchange.",
+      response_timeout_secs: 10,
+      pre_tool_speech: 'off',
+      api_schema: {
+        url,
+        method: 'POST',
+        request_headers: { 'X-Wingman-Tool-Secret': secret },
+        request_body_schema: {
+          type: 'object',
+          properties: {
+            job_id: { type: 'string', description: 'The job_id ask_wingman returned. Leave empty for the latest lookup.' },
+            call_token: { type: 'string', dynamic_variable: 'call_token' },
+          },
+        },
+      },
+    },
+  };
+}
+
+/** Create the webhook tool, or update it in place if one with that name exists. */
+async function upsertTool(body) {
+  const name = body.tool_config.name;
+  try {
+    const list = await el.call('GET', '/v1/convai/tools');
+    const found = (list.tools || []).find((t) => t.tool_config && t.tool_config.name === name);
+    if (found) {
+      await el.call('PATCH', `/v1/convai/tools/${encodeURIComponent(found.id)}`, body);
+      return found.id;
+    }
+  } catch (e) {
+    console.warn(`(could not reuse existing ${name} tool, creating a new one)`, e.message.slice(0, 120));
+  }
+  const tool = await el.call('POST', '/v1/convai/tools', body);
+  return tool.id || tool.tool_id;
+}
+
+function agentBody(toolIds, { withHindi = true } = {}) {
   return {
     name: 'Wingman — briefing calls',
     tags: ['wingman'],
@@ -82,7 +125,7 @@ function agentBody(toolId, { withHindi = true } = {}) {
           prompt: PROMPT,
           llm: LLM,
           temperature: 0.5,
-          tool_ids: [toolId],
+          tool_ids: toolIds,
           built_in_tools: {
             end_call: { name: 'end_call', description: 'End the call when the user is done or busy.', params: { system_tool_type: 'end_call' } },
           },
@@ -104,31 +147,15 @@ function agentBody(toolId, { withHindi = true } = {}) {
   if (!config.elevenlabs.apiKey) throw new Error('Set ELEVENLABS_API_KEY in .env first.');
   const base = String(config.publicBaseUrl || '').replace(/\/+$/, '');
   if (!/^https:\/\//.test(base)) throw new Error(`PUBLIC_BASE_URL must be the public https URL (now: "${base}").`);
-  const url = `${base}/voice/tools/ask`;
-
-  // Reuse the ask_wingman tool if it already exists (re-runs shouldn't pile up copies).
-  const body = toolBody(url, briefingCall.toolSecret());
-  let toolId = null;
-  try {
-    const list = await el.call('GET', '/v1/convai/tools');
-    const found = (list.tools || []).find((t) => t.tool_config && t.tool_config.name === 'ask_wingman');
-    if (found) {
-      toolId = found.id;
-      await el.call('PATCH', `/v1/convai/tools/${encodeURIComponent(toolId)}`, body);
-    }
-  } catch (e) {
-    console.warn('(could not reuse existing tool, creating a new one)', e.message.slice(0, 120));
-    toolId = null;
-  }
-  if (!toolId) {
-    const tool = await el.call('POST', '/v1/convai/tools', body);
-    toolId = tool.id || tool.tool_id;
-  }
-  console.log('ask_wingman tool:', toolId);
+  const secret = briefingCall.toolSecret();
+  const askId = await upsertTool(askToolBody(`${base}/voice/tools/ask`, secret));
+  const resultId = await upsertTool(resultToolBody(`${base}/voice/tools/result`, secret));
+  console.log('ask_wingman tool:', askId, '· wingman_result tool:', resultId);
+  const toolIds = [askId, resultId];
 
   // Try with Urdu/Hindi support first; if the account rejects it, English only.
   const save = async (withHindi) => {
-    const b = agentBody(toolId, { withHindi });
+    const b = agentBody(toolIds, { withHindi });
     if (config.elevenlabs.agentId) {
       await el.call('PATCH', `/v1/convai/agents/${encodeURIComponent(config.elevenlabs.agentId)}`, b);
       return config.elevenlabs.agentId;

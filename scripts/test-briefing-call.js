@@ -34,6 +34,8 @@ const el = require('../src/services/elevenlabs');
 const calls = [];
 let convResult = null;
 el.startWhatsAppCall = async (args) => { calls.push(args); return { conversationId: `conv_${calls.length}`, message: 'ok' }; };
+const phoneCalls = [];
+el.startPhoneCall = async (args) => { phoneCalls.push(args); return { conversationId: `pconv_${phoneCalls.length}`, message: 'ok' }; };
 el.getConversation = async () => convResult;
 el.speak = async (text) => ({ buffer: Buffer.from(`OggS${text.slice(0, 20)}`), mimeType: 'audio/ogg' });
 
@@ -116,6 +118,22 @@ const check = (name, ok, extra = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  
   briefingCall.setEnabled(u.id, true);
   check('ELEVENLABS_CALLS off → no calls (voice notes only)', !briefingCall.shouldCall(users.getById(u.id)) && briefingCall.wantsVoice(users.getById(u.id)));
 
+  // 8b. Phone channel: a normal call to the user's number (no WhatsApp rules).
+  process.env.ELEVENLABS_CALLS = '1';
+  process.env.ELEVENLABS_CALL_CHANNEL = 'phone';
+  const phu = users.create({ phone: '923331234567' });
+  users.update(phu.id, { name: 'Bilal Khan', onboarding_complete: 1 });
+  briefingCall.setEnabled(phu.id, true);
+  check('phone channel without a number id → no calls', !briefingCall.shouldCall(users.getById(phu.id)));
+  process.env.ELEVENLABS_PHONE_NUMBER_ID = 'phnum_test';
+  check('phone channel ready once the Twilio number is imported', briefingCall.shouldCall(users.getById(phu.id)));
+  const before = calls.length;
+  const ps = await briefingCall.start(users.getById(phu.id), 'briefing', { now: new Date() });
+  check('briefing goes out as a PHONE call to their number (not WhatsApp)', ps.started && phoneCalls.length === 1 && phoneCalls[0].toNumber === '923331234567' && calls.length === before && !!phoneCalls[0].dynamicVariables.briefing, JSON.stringify(ps));
+  delete process.env.ELEVENLABS_CALL_CHANNEL;
+  delete process.env.ELEVENLABS_PHONE_NUMBER_ID;
+  delete process.env.ELEVENLABS_CALLS;
+
   // 9a. Inbound calls get an instant snapshot from synced data.
   const soon = new Date(Date.now() + 60 * 60000).toISOString();
   db.db.prepare("INSERT INTO calendar_events (id, user_id, title, start_time) VALUES ('ev1', ?, 'Design review with Sara', ?)").run(u.id, soon);
@@ -162,6 +180,23 @@ const check = (name, ok, extra = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  
   const startedAt = new Date(Date.parse(pu.preferences.prebuilt.at) + 30 * 60000);
   await briefingCall.start(pu, 'briefing', { now: startedAt });
   check('call at briefing time uses the pre-built briefing + memory', (calls[0].dynamicVariables.briefing || '').length > 20 && /after 11am/.test(calls[0].dynamicVariables.brain));
+
+  // 12. Long lookups on a call: never silent — "working" now, answer later.
+  const tok = iv.call_token;
+  conv.answerForCall = async (user, q) => { await new Promise((r) => setTimeout(r, /flight/.test(q) ? 400 : 10)); return `answer: ${q}`; };
+  const quick = await briefingCall.ask(tok, 'meri meetings?', '', { budgetMs: 150 });
+  check('quick question → answered straight away', quick.answer === 'answer: meri meetings?');
+  const slow = await briefingCall.ask(tok, 'aaj Abu Dhabi ki flights?', '', { budgetMs: 150 });
+  check('slow lookup → "working" + job id + keep-talking instruction (no silence)', slow.status === 'working' && !!slow.job_id && /keep the conversation going/.test(slow.instruction));
+  const early = await briefingCall.result(tok, slow.job_id, { waitMs: 50 });
+  check('fetched too early → still working, keep chatting', early.status === 'working');
+  const late = await briefingCall.result(tok, slow.job_id, { waitMs: 1000 });
+  check('fetched after the user replied → the answer', late.answer === 'answer: aaj Abu Dhabi ki flights?');
+  const other = await briefingCall.result('someone-else', slow.job_id);
+  check('another call can\'t read this answer', !!other.error);
+  const latest = await briefingCall.ask(tok, 'flight to Dubai?', '', { budgetMs: 50 });
+  const byLatest = await briefingCall.result(tok, '', { waitMs: 1000 });
+  check('wingman_result without id → latest lookup of this call', latest.status === 'working' && byLatest.answer === 'answer: flight to Dubai?');
 
   console.log(fails ? `\n${fails} FAILED` : '\nall passed');
   process.exit(fails ? 1 : 0);

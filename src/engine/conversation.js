@@ -24,6 +24,7 @@ const { shopifyTools, shopifyToolNames } = require('./shopifyTools');
 const { newsTools, newsToolNames } = require('./newsTools');
 const { memoryTools, memoryToolNames } = require('./memoryTools');
 const { mapsTools, mapsToolNames } = require('./mapsTools');
+const { rideTools, rideToolNames } = require('./rideTools');
 const { webmailTools, webmailToolNames } = require('./webmailTools');
 const { voiceTools, voiceToolNames } = require('./voiceTools');
 const { healthTools, healthToolNames } = require('./healthTools');
@@ -37,6 +38,7 @@ const { executeAgentTool } = require('./agentExecutor');
 const { executeVoiceTool } = require('./voiceExecutor');
 const { executeWebmailTool } = require('./webmailExecutor');
 const { executeMapsTool } = require('./mapsExecutor');
+const { executeRideTool } = require('./rideExecutor');
 const { executeMemoryTool } = require('./memoryExecutor');
 const { executeNewsTool } = require('./newsExecutor');
 const { executeShopifyTool } = require('./shopifyExecutor');
@@ -288,6 +290,7 @@ async function runBuiltinTool(user, name, input) {
   if (gmailToolNames.has(name)) return executeGmailTool(fresh, toolUse);
   if (webmailToolNames.has(name)) return executeWebmailTool(fresh, toolUse);
   if (driveToolNames.has(name)) return executeDriveTool(fresh, toolUse);
+  if (rideToolNames.has(name)) return executeRideTool(fresh, toolUse);
   return executeCalendarTool(fresh, toolUse);
 }
 setBuiltinRunner(runBuiltinTool);
@@ -324,6 +327,7 @@ function builtinToolList() {
     ...newsTools,
     ...memoryTools,
     ...mapsTools,
+    ...rideTools,
     ...webmailTools,
     ...voiceTools,
     ...healthTools,
@@ -371,6 +375,11 @@ async function runToolLoop(user, messages, system, maxRounds = 5, ctx = {}) {
           // Checked first: app tool names are Composio slugs, and anything not
           // matched below would otherwise fall through to the calendar executor.
           result = await executeIntegrationTool(user, { name: block.name, input: block.input }, ctx);
+        } else if (rideToolNames.has(block.name) && !config.uber.enabled) {
+          // No Uber business account yet → "link mode": Wingman prepares an
+          // Uber link with pickup + drop filled in; the user books in their
+          // own Uber app. Nothing is spent by Wingman, so no approval needed.
+          result = await executeRideTool(user, { name: block.name, input: block.input });
         } else if (BUILTIN_GATED.has(block.name)) {
           // Outward-facing / hard-to-undo built-ins wait for the user's yes on
           // the server, exactly like app tools.
@@ -404,6 +413,8 @@ async function runToolLoop(user, messages, system, maxRounds = 5, ctx = {}) {
           result = await executeMemoryTool(user, { name: block.name, input: block.input });
         } else if (mapsToolNames.has(block.name)) {
           result = await executeMapsTool(user, { name: block.name, input: block.input });
+        } else if (rideToolNames.has(block.name)) {
+          result = await executeRideTool(user, { name: block.name, input: block.input });
         } else if (webmailToolNames.has(block.name)) {
           result = await executeWebmailTool(user, { name: block.name, input: block.input });
         } else if (voiceToolNames.has(block.name)) {

@@ -686,3 +686,27 @@ CREATE TABLE IF NOT EXISTS account_tokens (
   used INTEGER DEFAULT 0,
   created_at TEXT DEFAULT (datetime('now'))
 );
+
+-- ─── Rides (Uber Guest Rides) ───────────────────────────────────────
+-- A ride Wingman booked for the user. The tracker polls active rows and tells
+-- the user on WhatsApp when the driver is assigned, close, arrived and done.
+CREATE TABLE IF NOT EXISTS rides (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  provider TEXT NOT NULL DEFAULT 'uber',
+  request_id TEXT,
+  status TEXT NOT NULL DEFAULT 'processing',
+  product_name TEXT,
+  fare TEXT,
+  pickup_label TEXT, pickup_lat REAL, pickup_lng REAL,
+  dropoff_label TEXT, dropoff_lat REAL, dropoff_lng REAL,
+  driver_name TEXT, driver_phone TEXT, vehicle TEXT, plate TEXT,
+  eta_min INTEGER,
+  share_url TEXT,
+  notified TEXT DEFAULT '',             -- comma list: assigned,near,arrived,started,done,failed
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now')),
+  finished_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_rides_user ON rides(user_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_rides_request ON rides(request_id);

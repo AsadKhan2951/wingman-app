@@ -54,7 +54,12 @@ const BUILTIN_GATED = new Set([
   'send_email', 'reply_to_email', 'forward_email',
   'send_business_email', 'reply_business_email',
   'delete_event', 'delete_drive_file', 'share_drive_file',
+  // Spends money on the business Uber account.
+  'book_ride', 'cancel_ride',
 ]);
+// These must wait for a yes even when Composio (and so the approval table's
+// usual path) is off: money is never spent without the user confirming.
+const ALWAYS_CONFIRM = new Set(['book_ride', 'cancel_ride']);
 let builtinRunner = null;
 /** conversation.js registers how to actually run a built-in tool after the yes. */
 function setBuiltinRunner(fn) { builtinRunner = fn; }
@@ -82,6 +87,10 @@ function builtinPreview(slug, a = {}) {
       return `Cancel calendar event ${a.event_id || a.id || ''} (guests are notified)`;
     case 'delete_drive_file':
       return `Delete Drive file ${a.file_id || a.id || ''} (moves to Trash)`;
+    case 'book_ride':
+      return `Book ${a.product_name || 'an Uber'} from ${a.from || 'your current location'} to ${a.to || '?'}${a.fare ? ` — ${a.fare}` : ''} (charged to Wingman's Uber account)`;
+    case 'cancel_ride':
+      return 'Cancel your Uber ride (Uber may charge a cancellation fee if the driver is already on the way)';
     case 'share_drive_file':
       return `Share Drive file ${a.file_id || ''} with ${a.email || 'anyone who has the link'} (${a.can_edit ? 'can edit' : 'view only'})`;
     default:
@@ -202,7 +211,10 @@ async function listIntegrations(user) {
 async function executeIntegrationTool(user, toolUse, ctx = {}) {
   const { name, input = {} } = toolUse;
   try {
-    if (!config.composio.enabled) return { error: 'INTEGRATIONS_NOT_CONFIGURED' };
+    // Approving / cancelling a parked action works without Composio too: the
+    // always-confirm built-ins (rides) park actions even when it's off.
+    const approvalOnly = name === 'approve_integration_action' || name === 'cancel_integration_action';
+    if (!config.composio.enabled && !approvalOnly) return { error: 'INTEGRATIONS_NOT_CONFIGURED' };
 
     if (managementToolNames.has(name)) {
       switch (name) {
@@ -268,7 +280,7 @@ async function executeIntegrationTool(user, toolUse, ctx = {}) {
  * an automated run.
  */
 async function gateBuiltin(user, name, input, ctx = {}, runNow) {
-  if (!config.composio.enabled) {
+  if (!config.composio.enabled && !ALWAYS_CONFIRM.has(name)) {
     if (ctx.automated) return { error: 'NEEDS_USER_CONFIRMATION', detail: 'Automated runs cannot send or delete. Tell the user what you would do and let them confirm.' };
     return runNow();
   }
@@ -302,7 +314,7 @@ async function proposeAutoApproveRule(user, { app, tool, about }, ctx = {}) {
  */
 function pendingActionsBlock(user) {
   try {
-    if (!config.composio.enabled || !user) return '';
+    if (!user) return '';
     actions.expireOld(config.composio.approvalTtlMinutes);
     const seen = new Set();
     const rows = actions.listPending(user.id).filter((r) => {

@@ -206,8 +206,38 @@ and the search index, and pre-builds the briefing for callers
 (`preferences.prebuilt`) so the call starts instantly.
 WhatsApp only allows business-initiated calls from NON-US/Canada business
 numbers with a 2K+ messaging limit — the +1 number cannot place calls.
+**Calls never go quiet:** `/voice/tools/ask` → `briefingCall.ask` waits
+`ELEVENLABS_TOOL_BUDGET_MS` (6 s) for the answer; a longer lookup returns
+`{status:'working', job_id}` at once and keeps running, the agent keeps talking
+(asks a related question) and fetches it via the `wingman_result` tool
+(`/voice/tools/result` → `briefingCall.result`). An answer never fetched (call
+ended) is sent on WhatsApp after 90 s. Re-run `scripts/setup-voice-agent.js`
+after changing the agent prompt/tools.
+**Phone channel:** `ELEVENLABS_CALL_CHANNEL=phone` + `ELEVENLABS_PHONE_NUMBER_ID`
+(a Twilio number imported into ElevenLabs) makes briefing calls normal phone
+calls to the user's number via `el.startPhoneCall` (`/v1/convai/twilio/outbound-call`)
+— no Meta permission or number rules. Same agent, variables and polling.
 `scripts/setup-voice-agent.js` creates/updates the agent; `scripts/test-voice.js`
 checks the key live.
+
+### Uber rides (book a cab for the user)
+
+`engine/rideTools.js` + `rideExecutor.js`, `services/uber.js` (Uber **Guest Rides
+API**, Uber for Business — the business account pays), `db/rides.js` (table
+`rides`), `services/rideTracker.js`. Flow: `get_ride_options` (pickup defaults to
+the user's CURRENT location — a WhatsApp location pin is saved as that by the
+webhook; older than 30 min → ask them to share it again) → user picks →
+`book_ride`, which is in `BUILTIN_GATED` **and** `ALWAYS_CONFIRM`, so it waits for
+the user's yes even when Composio is off; at booking it re-quotes and refuses if
+the fare rose > `UBER_MAX_FARE_RISE` (15%). The tracker polls active rides every
+`UBER_POLL_SECONDS` (and `POST /webhooks/uber`, HMAC with the client secret,
+nudges it) and messages the user once each: driver/car/plate, "~2 min away",
+"your cab is here", arrived + fare, or driver cancelled / no drivers.
+`cancel_ride` is gated too. Env: `UBER_CLIENT_ID`, `UBER_CLIENT_SECRET`,
+`UBER_ORG_ID`, `UBER_SANDBOX=1` for testing. **Without those keys it runs in link
+mode**: the ride tools return an Uber universal link (+ Lyft backup) with pickup
+and drop pre-filled; the user books in their own app (no gate, nothing spent,
+no tracking). `scripts/test-rides.js` checks both modes offline.
 
 ### Security rules
 
@@ -215,8 +245,8 @@ checks the key live.
 - Connect links must be built with `utils/linkSig.js` `connectQuery(phone)`;
   OAuth `state` with `signState` / `verifyState`. Unsigned links get a 403.
 - Webhook POSTs are HMAC-checked when `WHATSAPP_APP_SECRET` is set.
-- Gmail / business-mail sends, `delete_event`, `delete_drive_file` and
-  `share_drive_file` go through the same server-side approval gate as app tools
+- Gmail / business-mail sends, `delete_event`, `delete_drive_file`,
+  `share_drive_file`, `book_ride` and `cancel_ride` go through the same server-side approval gate as app tools
   (`BUILTIN_GATED` in `integrationExecutor.js`).
 
 ### Tests (run before every deploy)
@@ -227,6 +257,7 @@ node scripts/test-engine-offline.js    # approval gate, loop end, tool memory, c
 node scripts/test-briefing-call.js     # voice briefings: calls, fallbacks, voice notes (fake ElevenLabs)
 node scripts/test-voice-chat.js        # chat voice notes on ElevenLabs (fake fetch)
 node scripts/test-accounts.js          # sign up / sign in / linking / reset (temp server)
+node scripts/test-rides.js             # Uber booking: options, yes-gate, tracker messages (fake Uber)
 docker exec wingman node scripts/eval-live.js   # real model, fake data, temp DB (~cents)
 ```
 

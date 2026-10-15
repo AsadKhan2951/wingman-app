@@ -152,8 +152,9 @@ async function start(user, kind, { now = new Date() } = {}) {
 
   try {
     const lang = await callLanguage(user);
-    const r = await el.startWhatsAppCall({
-      waUserId: user.phone,
+    const phone = config.elevenlabs.callChannel === 'phone';
+    const r = await (phone ? el.startPhoneCall : el.startWhatsAppCall)({
+      ...(phone ? { toNumber: user.phone } : { waUserId: user.phone }),
       language: lang,
       firstMessage: openingLine(user, kind, lang),
       dynamicVariables: {
@@ -432,6 +433,85 @@ async function answer(token, question, context = '') {
   return { answer: reply || "Sorry, I couldn't get that right now — I'll message you on WhatsApp." };
 }
 
+// ─── Long lookups on a call: keep talking, fetch the answer later ──────
+// A voice call must never go quiet. ask() waits a few seconds for Wingman's
+// answer; if the work takes longer (web search, flights, several tools) it
+// returns "working" + a job id at once, the agent keeps the conversation going
+// (asks a related question), and fetches the answer with result(). An answer
+// nobody picked up (the call ended) goes to the user on WhatsApp instead.
+const jobs = new Map(); // id → { id, token, userId, question, started, done, result, fetched }
+const JOB_TTL_MS = 20 * 60000;
+const UNCLAIMED_MS = 90 * 1000;
+
+const sleep = (ms) => new Promise((r) => { const t = setTimeout(r, ms); if (t.unref) t.unref(); });
+
+function sweepJobs() {
+  const now = Date.now();
+  for (const [id, j] of jobs) if (now - j.started > JOB_TTL_MS) jobs.delete(id);
+}
+
+function workingReply(job) {
+  return {
+    status: 'working',
+    job_id: job.id,
+    instruction:
+      'Still looking it up in the background. Do NOT go quiet and do NOT say "please wait". ' +
+      'Say in one short line that you are on it, then keep the conversation going naturally: ask a useful related question ' +
+      'that will help (e.g. for flights: which dates, airline preference, where in the city they are staying; for a meeting: who else is coming), ' +
+      'or mention something relevant from your notes. After they answer (or after one more exchange), call wingman_result with this job_id. ' +
+      'If it is still working, keep chatting and try again shortly. If they gave new details, you may call ask_wingman again with them.',
+  };
+}
+
+async function deliverUnclaimed(job) {
+  try {
+    const user = usersRepo.getById(job.userId);
+    const ans = job.result && job.result.answer;
+    if (!user || !ans) return;
+    await require('../whatsapp/client').sendMessage(user.phone, `📞 From our call — you asked: "${String(job.question).slice(0, 120)}"\n\n${ans}`);
+    console.log(`[briefingCall] unclaimed call answer sent on WhatsApp to ${user.id}`);
+  } catch (e) {
+    console.warn('[briefingCall] unclaimed answer send failed:', e.message);
+  }
+}
+
+/** Tool entry point: answer now if quick, else { status: 'working', job_id }. */
+async function ask(token, question, context = '', { budgetMs = config.elevenlabs.toolBudgetMs } = {}) {
+  sweepJobs();
+  const row = token
+    ? db.prepare("SELECT * FROM voice_calls WHERE call_token = ? AND created_at > datetime('now', '-3 hours')").get(String(token))
+    : null;
+  if (!row) return { error: 'UNKNOWN_CALL' };
+  const job = { id: crypto.randomBytes(6).toString('hex'), token: String(token), userId: row.user_id, question, started: Date.now(), done: false, result: null, fetched: false };
+  job.promise = answer(token, question, context)
+    .catch((e) => { console.warn('[briefingCall] call lookup failed:', e.message); return { answer: "I couldn't get that right now. I'll message you on WhatsApp." }; })
+    .then((r) => {
+      job.done = true; job.result = r;
+      // Finished after the agent stopped asking (call over / forgot) → WhatsApp it.
+      sleep(UNCLAIMED_MS).then(() => { if (!job.fetched && jobs.has(job.id)) { jobs.delete(job.id); deliverUnclaimed(job); } });
+      return r;
+    });
+  jobs.set(job.id, job);
+  const quick = await Promise.race([job.promise, sleep(budgetMs).then(() => null)]);
+  if (quick) { job.fetched = true; jobs.delete(job.id); return quick; }
+  return workingReply(job);
+}
+
+/** Tool entry point: the answer for a job (or this call's latest one), waiting a little. */
+async function result(token, jobId, { waitMs = 4000 } = {}) {
+  let job = jobId ? jobs.get(String(jobId)) : null;
+  if (!job && token) {
+    // No/unknown id → the most recent job of this call.
+    job = [...jobs.values()].filter((j) => j.token === String(token)).sort((a, b) => b.started - a.started)[0] || null;
+  }
+  if (!job || job.token !== String(token || '')) return { error: 'NO_PENDING_LOOKUP', detail: 'Nothing is being looked up for this call. Use ask_wingman if they asked something.' };
+  if (!job.done) await Promise.race([job.promise, sleep(waitMs)]);
+  if (!job.done) return workingReply(job);
+  job.fetched = true;
+  jobs.delete(job.id);
+  return job.result;
+}
+
 /** Read a full briefing/wrap aloud and send it as a WhatsApp voice note (window must be open). */
 async function sendVoiceNote(user, text) {
   if (!wantsVoice(user) || !text) return false;
@@ -450,6 +530,6 @@ async function sendVoiceNote(user, text) {
 }
 
 module.exports = {
-  isOn, setEnabled, wantsVoice, shouldCall, start, runPoll, answer, sendVoiceNote,
+  isOn, setEnabled, wantsVoice, shouldCall, start, runPoll, answer, ask, result, sendVoiceNote,
   toolSecret, consecutiveMissed, wasAnswered, callLanguage, inbound, callerNumber, quickSnapshot, brainContext,
 };

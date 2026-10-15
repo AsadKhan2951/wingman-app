@@ -580,13 +580,44 @@ app.post('/voice/tools/ask', async (req, res) => {
   const question = String(body.question || '').trim();
   if (!question) return res.status(400).json({ error: 'question required' });
   try {
-    const out = await briefingCall.answer(String(body.call_token || ''), question, String(body.context || ''));
+    const out = await briefingCall.ask(String(body.call_token || ''), question, String(body.context || ''));
     if (out.error) return res.status(404).json(out);
     res.json(out);
   } catch (e) {
     console.warn('[voice/ask] failed:', e.message);
     res.json({ answer: "I couldn't check that right now. I'll message you the answer on WhatsApp." });
   }
+});
+
+// The agent fetches an answer that took longer than the quick budget (it kept
+// the conversation going meanwhile). Same shared secret as /voice/tools/ask.
+app.post('/voice/tools/result', async (req, res) => {
+  const briefingCall = require('./services/briefingCall');
+  const given = String(req.get('x-wingman-tool-secret') || '');
+  if (!require('./utils/linkSig').safeEqual(given, briefingCall.toolSecret())) {
+    return res.status(401).json({ error: 'unauthorized' });
+  }
+  const body = req.body || {};
+  try {
+    res.json(await briefingCall.result(String(body.call_token || ''), String(body.job_id || '')));
+  } catch (e) {
+    console.warn('[voice/result] failed:', e.message);
+    res.json({ answer: "I couldn't get that right now. I'll message you on WhatsApp." });
+  }
+});
+
+// Uber Guest Rides webhook — a trip changed (driver accepted, arriving, …).
+// Signed with HMAC-SHA256 of the client secret (X-Uber-Signature). We only use
+// it as a nudge: the tracker re-reads the trip from Uber before telling anyone.
+app.post('/webhooks/uber', async (req, res) => {
+  const uber = require('./services/uber');
+  if (!uber.verifyWebhook(req.rawBody, req.get('x-uber-signature'))) {
+    console.warn('[webhooks/uber] bad signature');
+    return res.sendStatus(401);
+  }
+  res.sendStatus(200);
+  try { await require('./services/rideTracker').onWebhook(req.body); }
+  catch (e) { console.warn('[webhooks/uber] handling failed:', e.message); }
 });
 
 // ElevenLabs "conversation initiation" webhook — the user called Wingman on
@@ -863,6 +894,17 @@ app.post('/webhook', (req, res) => {
           console.warn('[webhook] pending full send failed:', err.message);
         }
 
+        // A shared location pin is the user's CURRENT location (cab pickup,
+        // "traffic from here", …) — remember it, with a readable label.
+        if (m.location && m.location.latitude != null && m.location.longitude != null) {
+          try {
+            const lu = require('./db/users').getByPhone(phoneNumber);
+            if (lu) await require('./services/maps').setCurrentLocation(lu.id, { lat: Number(m.location.latitude), lng: Number(m.location.longitude) });
+          } catch (err) {
+            console.warn('[webhook] location save failed:', err.message);
+          }
+        }
+
         const { reply, ignored } = await engine.handleMessage({
           text: m.text,
           phoneNumber,
@@ -1041,6 +1083,10 @@ function start() {
   } catch (e) {
     console.warn('[server] could not start scheduler:', e.message);
   }
+
+  // 2d) Uber rides: poll active rides and keep the user posted on WhatsApp.
+  try { require('./services/rideTracker').start(); }
+  catch (e) { console.warn('[server] could not start ride tracker:', e.message); }
 
   // Search index: catch up on everything already in the database (first run
   // after deploy indexes the backlog), off the boot path.

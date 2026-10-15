@@ -266,7 +266,7 @@ const USER_CHILD_TABLES = [
   'google_accounts', 'goals', 'agent_actions', 'credentials',
   'integration_actions', 'user_media', 'app_knowledge', 'user_rules', 'search_docs',
   'sessions', 'meeting_bots', 'pending_full_sends', 'held_messages', 'voice_calls',
-  'accounts',
+  'accounts', 'rides',
 ];
 
 /** Hard-delete a user and everything referencing them (children first). */
@@ -320,6 +320,7 @@ function mergeDuplicatePhones() {
         for (const d of list.slice(1)) {
           try { db.prepare('UPDATE sessions SET user_id = ? WHERE user_id = ?').run(primary.id, d.id); } catch (_) { /* no sessions */ }
           try { db.prepare('UPDATE accounts SET user_id = ? WHERE user_id = ?').run(primary.id, d.id); } catch (_) { /* no accounts */ }
+          try { db.prepare('UPDATE rides SET user_id = ? WHERE user_id = ?').run(primary.id, d.id); } catch (_) { /* no rides */ }
           deleteUserCascade(d.id); deleted.add(d.id); removed++;
         }
       }

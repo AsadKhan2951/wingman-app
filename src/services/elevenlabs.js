@@ -129,9 +129,40 @@ async function startWhatsAppCall({ waUserId, dynamicVariables = {}, language = n
   return { conversationId: (r && r.conversation_id) || null, message: (r && r.message) || '' };
 }
 
+/**
+ * Ask the Wingman agent to ring the user's normal phone number (Twilio number
+ * imported into ElevenLabs). No WhatsApp permission needed.
+ * @returns {Promise<{conversationId: string|null, message: string}>}
+ */
+async function startPhoneCall({ toNumber, dynamicVariables = {}, language = null, firstMessage = null }) {
+  const cfg = config.elevenlabs;
+  if (!cfg.agentId) throw new Error('ELEVENLABS_AGENT_ID_MISSING');
+  if (!cfg.phoneNumberId) throw new Error('ELEVENLABS_PHONE_NUMBER_MISSING');
+  const digits = String(toNumber || '').replace(/\D/g, '');
+  if (!digits) throw new Error('NO_PHONE_NUMBER');
+  const override = {};
+  if (language || firstMessage) {
+    override.agent = {};
+    if (language) override.agent.language = language;
+    if (firstMessage) override.agent.first_message = firstMessage;
+  }
+  const r = await call('POST', '/v1/convai/twilio/outbound-call', {
+    agent_id: cfg.agentId,
+    agent_phone_number_id: cfg.phoneNumberId,
+    to_number: `+${digits}`,
+    conversation_initiation_client_data: {
+      dynamic_variables: dynamicVariables,
+      ...(Object.keys(override).length ? { conversation_config_override: override } : {}),
+    },
+    telephony_call_config: { ringing_timeout_secs: cfg.ringSeconds },
+  });
+  if (r && r.success === false) throw new Error(`ELEVENLABS_CALL_REFUSED: ${r.message || ''}`);
+  return { conversationId: (r && r.conversation_id) || null, message: (r && r.message) || '' };
+}
+
 /** Status + metadata + transcript of one conversation (call). */
 async function getConversation(conversationId) {
   return call('GET', `/v1/convai/conversations/${encodeURIComponent(conversationId)}`);
 }
 
-module.exports = { speak, transcribe, startWhatsAppCall, getConversation, forSpeech, call };
+module.exports = { speak, transcribe, startWhatsAppCall, startPhoneCall, getConversation, forSpeech, call };
