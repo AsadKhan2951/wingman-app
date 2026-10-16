@@ -58,6 +58,38 @@ const taskTools = [
       required: ['query', 'due_date'],
     },
   },
+  {
+    name: 'delete_task',
+    description:
+      'Delete a task for good (also from Google Tasks). Use when the user says delete / remove / cancel / hata do / mita do a task. ' +
+      'Pass task_id from list_tasks when you have it, else a phrase from its title. If it returns MULTIPLE_MATCHES, ' +
+      'ask which one (list them briefly). To delete several, call it once per task.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        task_id: { type: 'string', description: 'The task id from list_tasks (preferred).' },
+        query: { type: 'string', description: 'Task title or a distinctive phrase from it.' },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'update_task',
+    description:
+      'Edit a task: rename it, change its priority, or change / clear its due date. Use for "rename", "change", ' +
+      '"make it high priority", "remove the deadline". (To only reschedule you can also use move_task.)',
+    input_schema: {
+      type: 'object',
+      properties: {
+        task_id: { type: 'string', description: 'The task id from list_tasks (preferred).' },
+        query: { type: 'string', description: 'Task title or a distinctive phrase from it.' },
+        title: { type: 'string', description: 'New title.' },
+        priority: { type: 'number', description: '1 (high) to 5 (low).' },
+        due_date: { type: 'string', description: 'New ISO 8601 datetime with timezone offset, or "none" to clear it.' },
+      },
+      required: [],
+    },
+  },
 ];
 
 const taskToolNames = new Set(taskTools.map((t) => t.name));

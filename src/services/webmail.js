@@ -176,7 +176,7 @@ async function listRecent(user, { limit = 10, mailbox = 'INBOX' } = {}) {
       const total = client.mailbox.exists || 0;
       if (total === 0) return [];
       const from = Math.max(1, total - limit + 1);
-      for await (const msg of client.fetch(`${from}:${total}`, { envelope: true, uid: true, bodyStructure: false })) {
+      for await (const msg of client.fetch(`${from}:${total}`, { envelope: true, uid: true, bodyStructure: false, flags: true, internalDate: true })) {
         const env = msg.envelope || {};
         const sender = (env.from && env.from[0]) || {};
         out.push({
@@ -185,7 +185,8 @@ async function listRecent(user, { limit = 10, mailbox = 'INBOX' } = {}) {
           from: sender.address ? `${sender.name ? `${sender.name} ` : ''}<${sender.address}>` : (sender.name || 'unknown'),
           fromAddress: sender.address || null,
           messageId: env.messageId || null,
-          date: env.date ? new Date(env.date).toISOString() : null,
+          date: msg.internalDate ? new Date(msg.internalDate).toISOString() : (env.date ? new Date(env.date).toISOString() : null),
+          unread: !(msg.flags && msg.flags.has && msg.flags.has('\\Seen')),
         });
       }
     } finally {
@@ -196,7 +197,8 @@ async function listRecent(user, { limit = 10, mailbox = 'INBOX' } = {}) {
     try { await client.logout(); } catch (_) { /* already down */ }
     throw new Error(friendlyError(err));
   }
-  return out.reverse(); // newest first
+  // Newest first by the time it arrived (sequence order can be off after moves).
+  return out.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
 }
 
 const MAX_BODY_CHARS = 6000;

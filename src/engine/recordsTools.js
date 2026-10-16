@@ -120,6 +120,33 @@ const recordsTools = [
     description: 'A ready digest of the user\'s recent email, grouped by urgent / needs reply / FYI, as Wingman has already analysed it. Use for a quick "anything in my inbox?" — for a specific email, search or reply, use the email tools instead.',
     input_schema: { type: 'object', properties: {} },
   },
+  {
+    name: 'email_overview',
+    description:
+      'The same email list the Wingman app shows, from BOTH Gmail and the business mailbox, already analysed: ' +
+      'who it is from, when it arrived (user timezone), a one-line summary, whether it needs a reply, its type ' +
+      '(order, cancellation, bill, payment receipt, flight, meeting request…) and whether it was replied. Newest first. ' +
+      'Use for "pending emails", "which emails need a reply", "any cancellation / order / bill emails", "emails from Hemani", ' +
+      '"what came in today", and whenever the user asks about something they saw in the app. For the live latest inbox use list_recent_emails / list_business_emails.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        view: { type: 'string', enum: ['needs_reply', 'urgent', 'handled', 'all'], description: 'needs_reply = still waiting on the user (the app\'s "Needs reply"). Default all.' },
+        type: { type: 'string', description: 'Optional email type: order, cancellation, bill, payment_receipt, flight, meeting_request, general.' },
+        mailbox: { type: 'string', enum: ['gmail', 'business', 'all'], description: 'Default all.' },
+        search: { type: 'string', description: 'Optional word/name to match in sender, subject or summary (e.g. "Hemani", "cancel").' },
+        since_days: { type: 'number', description: 'Only emails from the last N days.' },
+        limit: { type: 'number', description: 'Default 15, max 40.' },
+      },
+    },
+  },
+  {
+    name: 'needs_attention',
+    description:
+      'What the app\'s Home "Needs attention" card shows: overdue tasks, emails still waiting on a reply, and today\'s ' +
+      'calendar clashes — each with details. Use for "what needs my attention", "kya pending hai", "44 need you kya hai", "what am I behind on".',
+    input_schema: { type: 'object', properties: {} },
+  },
 ];
 
 const recordsToolNames = new Set(recordsTools.map((t) => t.name));

@@ -247,6 +247,8 @@ router.get('/emails', async (req, res) => {
     // is Gmail. Lets the app label each email so the user can tell them apart.
     source: String(e.gmail_id || '').startsWith('webmail:') ? 'webmail' : 'gmail',
     avatar: senderAvatar(e.sender, photoMap),
+    account: e.account_email || null,
+    received_at: e.received_at || null,
     created_at: e.created_at,
   }));
   res.json({ emails: norm, mock: isMock });

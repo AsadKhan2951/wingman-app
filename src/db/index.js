@@ -140,6 +140,8 @@ function applyMigrations() {
     email_items: [
       ['account_id', 'TEXT'],
       ['account_email', 'TEXT'],
+      // When the email actually ARRIVED (created_at is when Wingman processed it).
+      ['received_at', 'TEXT'],
     ],
     meetings: [
       ['recording_url', 'TEXT'],

@@ -207,7 +207,7 @@ and the search index, and pre-builds the briefing for callers
 WhatsApp only allows business-initiated calls from NON-US/Canada business
 numbers with a 2K+ messaging limit — the +1 number cannot place calls.
 **Calls never go quiet:** `/voice/tools/ask` → `briefingCall.ask` waits
-`ELEVENLABS_TOOL_BUDGET_MS` (6 s) for the answer; a longer lookup returns
+`ELEVENLABS_TOOL_BUDGET_MS` (2.5 s) for the answer; a longer lookup returns
 `{status:'working', job_id}` at once and keeps running, the agent keeps talking
 (asks a related question) and fetches it via the `wingman_result` tool
 (`/voice/tools/result` → `briefingCall.result`). An answer never fetched (call
@@ -239,6 +239,19 @@ mode**: the ride tools return an Uber universal link (+ Lyft backup) with pickup
 and drop pre-filled; the user books in their own app (no gate, nothing spent,
 no tracking). `scripts/test-rides.js` checks both modes offline.
 
+### Chat knows everything the app shows
+
+The assistant must never send the user to the app for information. App data
+has chat tools: `email_overview` (the app's email list: Gmail + business, real
+`received_at`, type incl. cancellation, needs-reply), `needs_attention` (the
+Home card: overdue tasks, emails waiting, today's clashes), `delete_task` /
+`update_task`. Email lists carry the real received time (`email_items.received_at`,
+Gmail `internalDate`) and are newest first; `created_at` is only when Wingman
+processed it. **Google connection health** (`services/googleConnection.js`):
+`invalid_grant` / `unauthorized_client` mark the user (`preferences.googleAuth`),
+tools return `GOOGLE_RECONNECT_NEEDED`, the user gets one WhatsApp link a day,
+and the OAuth callback clears it.
+
 ### Security rules
 
 - Admin/debug routes use `utils/adminAuth.js` (`requireAdmin`) — fails closed.
@@ -258,6 +271,7 @@ node scripts/test-briefing-call.js     # voice briefings: calls, fallbacks, voic
 node scripts/test-voice-chat.js        # chat voice notes on ElevenLabs (fake fetch)
 node scripts/test-accounts.js          # sign up / sign in / linking / reset (temp server)
 node scripts/test-rides.js             # Uber booking: options, yes-gate, tracker messages (fake Uber)
+node scripts/test-app-parity.js        # tasks delete/edit, email times/order, Gmail vs business, app parity, expired Google
 docker exec wingman node scripts/eval-live.js   # real model, fake data, temp DB (~cents)
 ```
 

@@ -25,6 +25,7 @@ function upsert(userId, item) {
     draft_reply: item.draftReply || null,
     detected_type: item.detectedType || 'general',
     extracted_data: JSON.stringify(item.extractedData || {}),
+    received_at: item.receivedAt || null,
   };
 
   if (existing) {
@@ -33,7 +34,8 @@ function upsert(userId, item) {
         account_id=COALESCE(@account_id, account_id), account_email=COALESCE(@account_email, account_email),
         subject=@subject, sender=@sender, category=@category, summary=@summary,
         action_needed=@action_needed, replied=@replied, draft_reply=@draft_reply,
-        detected_type=@detected_type, extracted_data=@extracted_data
+        detected_type=@detected_type, extracted_data=@extracted_data,
+        received_at=COALESCE(@received_at, received_at)
       WHERE id=@id
     `).run({ ...row, id: existing.id });
     return existing.id;
@@ -43,10 +45,10 @@ function upsert(userId, item) {
   db.prepare(`
     INSERT INTO email_items
       (id, user_id, gmail_id, account_id, account_email, subject, sender, category, summary,
-       action_needed, replied, draft_reply, detected_type, extracted_data)
+       action_needed, replied, draft_reply, detected_type, extracted_data, received_at)
     VALUES
       (@id, @user_id, @gmail_id, @account_id, @account_email, @subject, @sender, @category, @summary,
-       @action_needed, @replied, @draft_reply, @detected_type, @extracted_data)
+       @action_needed, @replied, @draft_reply, @detected_type, @extracted_data, @received_at)
   `).run({ ...row, id });
   return id;
 }
@@ -66,7 +68,7 @@ function existsByGmailId(userId, gmailId) {
 /** All email items for a user, newest first. */
 function listForUser(userId, limit = 100) {
   return db
-    .prepare('SELECT * FROM email_items WHERE user_id = ? ORDER BY created_at DESC LIMIT ?')
+    .prepare('SELECT * FROM email_items WHERE user_id = ? ORDER BY COALESCE(received_at, created_at) DESC LIMIT ?')
     .all(userId, limit);
 }
 

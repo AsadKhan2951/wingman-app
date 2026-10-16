@@ -23,7 +23,7 @@ const ANALYSIS_PROMPT = (subject, sender, body, context) => `Analyze this email.
   "category": "urgent|needs_reply|fyi|spam",
   "summary": "1-2 sentence summary",
   "action_needed": true or false,
-  "detected_type": "bill|payment_receipt|order|flight|meeting_request|general",
+  "detected_type": "bill|payment_receipt|order|cancellation|flight|meeting_request|general",
   "extracted_data": {
     "company": "if bill or payment_receipt: company/biller name",
     "amount": "if bill or payment_receipt: amount with currency",
@@ -47,6 +47,7 @@ const ANALYSIS_PROMPT = (subject, sender, body, context) => `Analyze this email.
 
 detected_type guidance:
 - "bill" = an invoice/statement the user still needs to PAY (has an amount due and usually a due date).
+- "cancellation" = something was CANCELLED: an order, booking, flight, subscription, meeting or appointment (words like "cancelled", "cancellation", "has been canceled", "refund issued for your cancelled…").
 - "payment_receipt" = confirmation a payment ALREADY went through (words like "payment received", "receipt", "thank you for your payment", "your card was charged"). Set company and amount so the matching bill can be cleared. Do NOT mark these as "bill".
 
 ${priorityBlock(context)}

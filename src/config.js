@@ -295,9 +295,10 @@ const config = {
     phoneNumberId: process.env.ELEVENLABS_PHONE_NUMBER_ID || '',
     // Ring this long before counting the call as missed (phone channel).
     ringSeconds: parseInt(process.env.ELEVENLABS_RING_SECONDS, 10) || 45,
-    // On a call, wait this long for Wingman's answer; longer lookups run in the
-    // background while the agent keeps talking (briefingCall.ask / result).
-    toolBudgetMs: parseInt(process.env.ELEVENLABS_TOOL_BUDGET_MS, 10) || 6000,
+    // On a call, wait this long for Wingman's answer (keep it short: the line is
+    // silent while a tool runs); longer lookups run in the background while the
+    // agent keeps talking (briefingCall.ask / result).
+    toolBudgetMs: parseInt(process.env.ELEVENLABS_TOOL_BUDGET_MS, 10) || 2500,
     get callsReady() {
       const base = !!(process.env.ELEVENLABS_API_KEY && process.env.ELEVENLABS_AGENT_ID && process.env.ELEVENLABS_CALLS === '1');
       if (!base) return false;

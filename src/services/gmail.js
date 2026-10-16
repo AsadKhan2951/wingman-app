@@ -172,6 +172,7 @@ async function getMessage(user, messageId, account = null) {
     snippet: msg.snippet || '',
     body: combinedBody.slice(0, 6000), // cap for LLM, incl. attachments
     labelIds: msg.labelIds || [],
+    receivedAt: Number(msg.internalDate) ? new Date(Number(msg.internalDate)).toISOString() : null,
     attachments,
   };
 }
@@ -323,4 +324,37 @@ async function getIdentity(user, account = null) {
   };
 }
 
-module.exports = { listMessageIds, getMessage, sendMessage, forwardMessage, buildRawMime, extractBody, getProfile, getIdentity, accountsFor };
+/**
+ * Light version of getMessage for LISTING: headers + snippet + labels + the
+ * real received time, no body or attachments (much faster, and the time is
+ * what "latest" and "when did it come" depend on).
+ */
+async function getMessageMeta(user, messageId, account = null) {
+  const gmail = gmailFor(user, account);
+  const res = await gmail.users.messages.get({
+    userId: 'me',
+    id: messageId,
+    format: 'metadata',
+    metadataHeaders: ['From', 'Subject', 'Date', 'To'],
+  });
+  const msg = res.data;
+  const headers = (msg.payload && msg.payload.headers) || [];
+  const h = (name) => {
+    const found = headers.find((x) => x.name.toLowerCase() === name.toLowerCase());
+    return found ? found.value : '';
+  };
+  const internal = Number(msg.internalDate);
+  const receivedAt = internal ? new Date(internal).toISOString() : (Date.parse(h('Date')) ? new Date(h('Date')).toISOString() : null);
+  return {
+    gmailId: msg.id,
+    threadId: msg.threadId,
+    subject: h('Subject'),
+    sender: h('From'),
+    to: h('To'),
+    snippet: msg.snippet || '',
+    labelIds: msg.labelIds || [],
+    receivedAt,
+  };
+}
+
+module.exports = { listMessageIds, getMessage, getMessageMeta, sendMessage, forwardMessage, buildRawMime, extractBody, getProfile, getIdentity, accountsFor };

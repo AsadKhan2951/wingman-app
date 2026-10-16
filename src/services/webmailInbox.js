@@ -74,6 +74,8 @@ async function syncUser(userId, { limit = 15, force = false } = {}) {
     let category = 'fyi';
     let summary = '';
     let actionNeeded = false;
+    let detectedType = 'general';
+    let extractedData = {};
     if (full && full.body) {
       try {
         const a = await analyzeEmail(
@@ -83,6 +85,10 @@ async function syncUser(userId, { limit = 15, force = false } = {}) {
         category = a.category || 'fyi';
         summary = a.summary || '';
         actionNeeded = IMPORTANT.has(category);
+        // Same types as Gmail (order, cancellation, bill, travel…) so business
+        // mail is sorted into the right buckets too.
+        detectedType = a.detectedType || 'general';
+        extractedData = a.extractedData || {};
         if (notifyOn && a.notify && a.notifyMessage) priorityNotifies.push(a.notifyMessage.trim());
       } catch (_) { /* keep defaults */ }
     }
@@ -95,7 +101,9 @@ async function syncUser(userId, { limit = 15, force = false } = {}) {
         category,
         summary,
         actionNeeded,
-        detectedType: 'general',
+        detectedType,
+        extractedData,
+        receivedAt: m.date || null,
       });
       stored += 1;
     } catch (e) { console.warn('[webmailInbox] upsert failed:', e.message); }

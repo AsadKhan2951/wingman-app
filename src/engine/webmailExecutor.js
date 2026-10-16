@@ -17,7 +17,18 @@ async function executeWebmailTool(user, toolUse) {
       case 'list_business_emails': {
         const limit = Math.min(Math.max(parseInt(input.limit, 10) || 10, 1), 25);
         const messages = await webmail.listRecent(user, { limit });
-        return { mailbox: user.webmail_address, count: messages.length, emails: messages };
+        const tz = user.timezone || 'Asia/Karachi';
+        const t = require('../utils/time');
+        return {
+          mailbox: `business (${user.webmail_address})`,
+          count: messages.length,
+          emails: messages.map((m) => ({
+            ...m,
+            mailbox: 'business',
+            received: m.date ? `${t.dayLabel(m.date, tz)} ${t.timeLabel(m.date, tz)}` : null,
+          })),
+          order: 'newest first; "received" is in the user\'s timezone',
+        };
       }
 
       case 'read_business_email': {

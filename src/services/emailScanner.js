@@ -111,8 +111,11 @@ async function scanUser(userId, { maxResults = 50 } = {}) {
       }
     } catch (err) {
       console.warn(`[emailScanner] list failed for ${(account && account.email) || user.phone}:`, err.message);
+      const gc = require('./googleConnection');
+      if (gc.isAuthError(err)) await gc.markBroken(user, { account: account && account.email, reason: err.message });
     }
   }
+  if (items.length) require('./googleConnection').markOk(user);
 
   // The user's own email priorities (set in onboarding) — free-form text telling
   // Wingman which people/topics/situations matter. When set, the AI decides per
@@ -162,6 +165,7 @@ async function scanUser(userId, { maxResults = 50 } = {}) {
       draftReply: analysis.draftReply,
       detectedType: analysis.detectedType,
       extractedData: analysis.extractedData,
+      receivedAt: msg.receivedAt || null,
     });
     newItems++;
 

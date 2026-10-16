@@ -160,6 +160,8 @@ async function handleCallback(code, phone) {
     // Only the primary account is mirrored into the legacy columns — otherwise
     // linking a second account would silently hijack every existing feature.
     linkedIsPrimary = !!(linked && linked.is_primary);
+    // Fresh consent → the "Google expired" state is over.
+    require('../services/googleConnection').markOk(user.id);
   } catch (e) {
     console.warn('[auth] could not record google account:', e.message);
   }

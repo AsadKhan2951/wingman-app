@@ -178,6 +178,7 @@ CREATE TABLE IF NOT EXISTS email_items (
   draft_reply TEXT,
   detected_type TEXT,
   extracted_data TEXT,
+  received_at TEXT,                     -- when it arrived (created_at = when Wingman processed it)
   created_at TEXT DEFAULT (datetime('now'))
 );
 

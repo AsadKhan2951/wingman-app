@@ -156,6 +156,47 @@ function findByTitle(userId, phrase) {
   return matches[0] || null;
 }
 
+/**
+ * Tasks matching a phrase (or an exact id), best match first. Includes
+ * completed ones only when asked. Used for delete/edit so a vague phrase that
+ * fits several tasks can be clarified instead of hitting the wrong one.
+ */
+function findMatches(userId, { id = null, phrase = '', includeCompleted = false } = {}) {
+  if (id) {
+    const row = db.prepare('SELECT * FROM tasks WHERE id = ? AND user_id = ?').get(String(id), userId);
+    return row ? [row] : [];
+  }
+  const p = String(phrase || '').toLowerCase().trim();
+  if (!p) return [];
+  const rows = db.prepare(`SELECT * FROM tasks WHERE user_id = ?${includeCompleted ? '' : ' AND completed = 0'}`).all(userId);
+  const words = p.split(/\s+/).filter((w) => w.length > 2);
+  const scored = rows.map((r) => {
+    const t = (r.title || '').toLowerCase().trim();
+    let score = 0;
+    if (t === p) score = 100;
+    else if (t.includes(p) || p.includes(t)) score = 60;
+    else if (words.length) {
+      const hit = words.filter((w) => t.includes(w)).length;
+      if (hit) score = Math.round((hit / words.length) * 50);
+    }
+    return { r, score };
+  }).filter((x) => x.score >= 25);
+  scored.sort((a, b) => b.score - a.score || (a.r.completed - b.r.completed) || (a.r.title || '').length - (b.r.title || '').length);
+  return scored.map((x) => x.r);
+}
+
+/** Change title / priority / due date of a task. */
+function updateFields(id, { title, priority, dueDate } = {}) {
+  const cols = [];
+  const vals = { id };
+  if (title !== undefined && title !== null && String(title).trim()) { cols.push('title = @title'); vals.title = String(title).trim().slice(0, 300); }
+  if (priority !== undefined && priority !== null && Number.isFinite(Number(priority))) { cols.push('priority = @priority'); vals.priority = Math.min(5, Math.max(1, Number(priority))); }
+  if (dueDate !== undefined) { cols.push('due_date = @dueDate'); vals.dueDate = dueDate || null; }
+  if (!cols.length) return getById(id);
+  db.prepare(`UPDATE tasks SET ${cols.join(', ')}, updated_at = ${nowSqlite()} WHERE id = @id`).run(vals);
+  return getById(id);
+}
+
 function updateDueDate(id, dueDateISO, { syncState } = {}) {
   if (syncState) {
     db.prepare(`
@@ -277,7 +318,7 @@ function removeAllGoogleImported(userId) {
 module.exports = {
   create, getById, getByGoogleRef, listForUser, listPendingSync, complete, remove,
   listDueBetween, listOverdue, countCompleted, countAll,
-  findByTitle, updateDueDate, updateSyncMeta, markLocalDirty, upsertFromGoogle,
+  findByTitle, findMatches, updateFields, updateDueDate, updateSyncMeta, markLocalDirty, upsertFromGoogle,
   clearGoogleSyncByAccount, removeGoogleImportedByAccount,
   clearAllGoogleSync, removeAllGoogleImported,
 };

@@ -4,6 +4,24 @@ const tasksRepo = require('../db/tasks');
 const googleTasks = require('../services/googleTasks');
 const t = require('../utils/time');
 
+/** One task from task_id or a title phrase — or a clear error the model can act on. */
+function pickTask(user, input = {}, { includeCompleted = false } = {}) {
+  const matches = tasksRepo.findMatches(user.id, { id: input.task_id, phrase: input.query, includeCompleted });
+  if (!matches.length) {
+    return { error: 'TASK_NOT_FOUND', detail: 'No task matches. Call list_tasks and use the exact task_id.' };
+  }
+  const top = matches[0];
+  const exact = (top.title || '').toLowerCase().trim() === String(input.query || '').toLowerCase().trim();
+  if (!input.task_id && !exact && matches.length > 1) {
+    return {
+      error: 'MULTIPLE_MATCHES',
+      detail: 'Several tasks match. Ask the user which one, then call again with its task_id.',
+      matches: matches.slice(0, 6).map((m) => ({ task_id: m.id, title: m.title, completed: !!m.completed })),
+    };
+  }
+  return { task: top };
+}
+
 async function executeTaskTool(user, toolUse) {
   const { name, input } = toolUse;
   const tz = user.timezone || 'Asia/Karachi';
@@ -100,6 +118,48 @@ async function executeTaskTool(user, toolUse) {
           },
           synced_to_google_tasks: !!sync.synced,
           google_account_email: sync.accountEmail || null,
+          sync_reason: sync.reason || null,
+        };
+      }
+
+      case 'delete_task': {
+        const found = pickTask(user, input, { includeCompleted: true });
+        if (found.error) return found;
+        const task = found.task;
+        // Remove it from Google first, so the next sync can't bring it back.
+        let removedRemote = false;
+        if (task.google_task_id) removedRemote = await googleTasks.mirrorTaskDeletion(task);
+        tasksRepo.remove(task.id);
+        return {
+          deleted: true,
+          task: { id: task.id, title: task.title },
+          removed_from_google_tasks: task.google_task_id ? removedRemote : null,
+        };
+      }
+
+      case 'update_task': {
+        const found = pickTask(user, input, { includeCompleted: false });
+        if (found.error) return found;
+        const clearDue = String(input.due_date || '').toLowerCase() === 'none';
+        const updated = tasksRepo.updateFields(found.task.id, {
+          title: input.title,
+          priority: input.priority,
+          dueDate: clearDue ? null : (input.due_date ? input.due_date : undefined),
+        });
+        let sync = { synced: false, reason: 'NOT_CONNECTED' };
+        try { sync = await googleTasks.mirrorTaskUpdate(updated.id); } catch (err) {
+          sync = { synced: false, reason: err.message || 'SYNC_FAILED' };
+        }
+        return {
+          updated: true,
+          task: {
+            id: updated.id,
+            title: updated.title,
+            priority: updated.priority,
+            due_date: updated.due_date || null,
+            due_label: updated.due_date ? `${t.dayLabel(updated.due_date, tz)} ${t.timeLabel(updated.due_date, tz)}` : null,
+          },
+          synced_to_google_tasks: !!sync.synced,
           sync_reason: sync.reason || null,
         };
       }

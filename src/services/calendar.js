@@ -211,6 +211,8 @@ async function getEvents(userId, dateRange = 'today') {
     } catch (err) {
       const who = account && account.email ? account.email : 'primary';
       console.warn(`[calendar] events fetch failed for ${who}:`, err.message);
+      const gc = require('./googleConnection');
+      if (gc.isAuthError(err)) await gc.markBroken(user, { account: account && account.email, reason: err.message });
     }
   }
 

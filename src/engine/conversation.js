@@ -231,7 +231,7 @@ async function runConversation(user, text, out = {}) {
     { type: 'text', text: parts.stable, cache_control: { type: 'ephemeral' } },
     {
       type: 'text',
-      text: parts.dynamic + connectLinkBlock(user) + appStudy.knowledgeBlock(user) + rulesBlock(user)
+      text: parts.dynamic + connectLinkBlock(user) + require('../services/googleConnection').promptBlock(user) + appStudy.knowledgeBlock(user) + rulesBlock(user)
         + pendingActionsBlock(user) + recentImagesBlock(user) + recentToolContextBlock(user),
     },
   ];

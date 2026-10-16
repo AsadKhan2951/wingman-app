@@ -26,6 +26,8 @@ type ServerEmail = {
   source?: 'gmail' | 'webmail'
   avatar?: string | null
   created_at?: string
+  received_at?: string | null
+  detected_type?: string
 }
 
 const TONES = ['blue', 'lavender', 'mint', 'peach', 'sand', 'rose'] as const
@@ -44,11 +46,19 @@ const nameOf = (sender?: string): string => {
   return ((m ? m[1] : sender).trim() || sender).slice(0, 40)
 }
 
-const timeOf = (iso?: string): string => {
+// When the email ARRIVED, Gmail-style: "3:40 PM" today, "Yesterday", a weekday
+// this week, else "12 Oct".
+const timeOf = (iso?: string | null): string => {
   if (!iso) return ''
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return ''
-  return `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`
+  const now = new Date()
+  const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+  const t = d.getTime()
+  if (t >= startToday) return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+  if (t >= startToday - 86400000) return 'Yesterday'
+  if (t >= startToday - 6 * 86400000) return d.toLocaleDateString([], { weekday: 'short' })
+  return d.toLocaleDateString([], { day: 'numeric', month: 'short' })
 }
 
 const isReplied = (e: ServerEmail) => e.replied === true || e.replied === 1
@@ -63,7 +73,7 @@ const toItem = (e: ServerEmail): EmailItem => {
     tone: toneFor(from),
     subject: e.subject || '(no subject)',
     preview: e.summary || '',
-    time: timeOf(e.created_at),
+    time: timeOf(e.received_at || e.created_at),
     unread: !isReplied(e),
     source: e.source === 'webmail' ? 'webmail' : 'gmail',
     avatar: e.avatar || null,

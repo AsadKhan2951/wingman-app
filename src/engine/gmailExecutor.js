@@ -1,5 +1,7 @@
 'use strict';
 
+const t = require('../utils/time');
+
 const gmail = require('../services/gmail');
 const contactsRepo = require('../db/contacts');
 const googleAuth = require('../auth/googleAuth');
@@ -41,30 +43,67 @@ async function executeGmailTool(user, toolUse) {
       }
 
       case 'list_recent_emails': {
-        const limit = Math.min(Math.max(parseInt(input.limit, 10) || 6, 1), 10);
-        // Pull from every linked Google account so a user with personal + work
-        // mailboxes sees one merged inbox. One bad account doesn't break the rest.
+        const limit = Math.min(Math.max(parseInt(input.limit, 10) || 8, 1), 20);
+        const tz = user.timezone || 'Asia/Karachi';
+        // Inbox only unless they asked for something else (no filter used to
+        // mix in SENT mail and drafts, so "latest email" was often their own).
+        const raw = String(input.query || '').trim();
+        const query = /\bin:|\blabel:|\bis:sent|\bin:sent/i.test(raw) ? raw : `in:inbox ${raw}`.trim();
+        // Every linked Google account → one merged inbox, newest first.
         const accounts = gmail.accountsFor(user);
         const emails = [];
+        const failed = [];
         for (const account of accounts) {
           try {
-            const ids = await gmail.listMessageIds(user, { maxResults: limit, query: input.query, account });
-            for (const id of ids.slice(0, limit)) {
-              const m = await gmail.getMessage(user, id, account);
+            const ids = await gmail.listMessageIds(user, { maxResults: limit, query, account });
+            const metas = await Promise.all(ids.slice(0, limit).map((id) => gmail.getMessageMeta(user, id, account).catch(() => null)));
+            for (const m of metas.filter(Boolean)) {
+              const labels = m.labelIds || [];
               emails.push({
                 id: m.gmailId,
+                mailbox: 'gmail',
                 account: account ? account.email : null,
                 from: m.sender,
                 subject: m.subject,
                 snippet: (m.snippet || '').slice(0, 200),
+                received_at: m.receivedAt,
+                received: m.receivedAt ? `${t.dayLabel(m.receivedAt, tz)} ${t.timeLabel(m.receivedAt, tz)}` : null,
+                unread: labels.includes('UNREAD'),
+                category: labels.includes('CATEGORY_PROMOTIONS') ? 'promotions'
+                  : labels.includes('CATEGORY_SOCIAL') ? 'social'
+                    : labels.includes('CATEGORY_UPDATES') ? 'updates' : 'primary',
               });
             }
           } catch (err) {
-            console.warn(`[gmail] list failed for ${(account && account.email) || 'primary'}:`, err.message);
+            const gc = require('../services/googleConnection');
+            const who = (account && account.email) || 'primary';
+            console.warn(`[gmail] list failed for ${who}:`, err.message);
+            if (gc.isAuthError(err)) {
+              failed.push(who);
+              await gc.markBroken(user, { account: account && account.email, reason: err.message });
+            } else {
+              failed.push(who);
+            }
           }
         }
+        if (!emails.length && failed.length) {
+          return {
+            error: 'GOOGLE_RECONNECT_NEEDED',
+            detail: 'Gmail could not be reached — the Google connection has expired. Do NOT say there are no new emails. Tell the user in one line and send the Google connect link.',
+            accounts: failed,
+          };
+        }
+        emails.sort((a, b) => String(b.received_at || '').localeCompare(String(a.received_at || '')));
         const linked = accounts.map((a) => (a ? a.email : null)).filter(Boolean);
-        return { count: emails.length, accounts: linked, emails };
+        return {
+          mailbox: 'gmail (personal / Google accounts)',
+          now: `${t.dayLabel(new Date(), tz)} ${t.timeLabel(new Date(), tz)}`,
+          count: emails.length,
+          accounts: linked,
+          ...(failed.length ? { accounts_not_reachable: failed, note: 'Some Google accounts could not be read (connection expired) — say so.' } : {}),
+          emails: emails.slice(0, limit),
+          order: 'newest first; "received" is in the user\'s timezone — use it for when/latest',
+        };
       }
 
       case 'read_email': {
@@ -77,6 +116,7 @@ async function executeGmailTool(user, toolUse) {
               account: account ? account.email : null,
               from: m.sender,
               subject: m.subject,
+              received: m.receivedAt ? `${t.dayLabel(m.receivedAt, user.timezone || 'Asia/Karachi')} ${t.timeLabel(m.receivedAt, user.timezone || 'Asia/Karachi')}` : null,
               body: m.body,
               attachments: m.attachments || [],
             };

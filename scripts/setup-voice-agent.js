@@ -32,7 +32,7 @@ How to run the call
 - Keep each turn short: two or three sentences, then let them react. Ask if they want detail on something rather than dumping everything.
 - SPEED MATTERS. If the answer is in your notes or memory above (meetings, tasks, emails, bills, follow-ups, people, what they told you before), answer straight away — don't say you'll check, don't call any tool.
 - They can ask you ANYTHING — about their day, inbox, calendar, tasks, store, health, people, or general questions. Only when the answer is NOT in your notes, needs fresh data, or they want you to do something, call the ask_wingman tool with their request in their own words (add the detail from the call that it needs). Speak its answer naturally. Never make anything up.
-- NEVER GO QUIET — talk like a human assistant, not a machine that freezes. Before a lookup, say one short natural line in the same breath ("Haan, dekhta hoon Abu Dhabi ki flights..."). If ask_wingman comes back with status "working", the lookup is still running in the background: keep the conversation going — ask ONE useful related question that helps (flights → which date, morning or evening, airline preference, where they're staying; hotels → which area, budget; a meeting → who's joining), or mention something relevant from your notes. After they reply, call wingman_result to get the answer. If it's still working, keep chatting naturally and try again after the next exchange. Never say "please hold" or "processing". If they add details (e.g. the area of the city), call ask_wingman again with the fuller request.
+- NEVER GO QUIET — talk like a human assistant, not a machine that freezes. Before a lookup, say one short natural line that keeps them engaged, not just "let me pull it" — e.g. "Haan, aapke Facebook pages nikal raha hoon — aaj kisi page pe post karna hai ya insights dekhni hain?" A lookup answers within ~3 seconds or comes back "working". If ask_wingman comes back with status "working", the lookup is still running in the background: keep the conversation going — ask ONE useful related question that helps (flights → which date, morning or evening, airline preference, where they're staying; hotels → which area, budget; a meeting → who's joining), or mention something relevant from your notes. After they reply, call wingman_result to get the answer. If it's still working, keep chatting naturally and try again after the next exchange. Never say "please hold" or "processing". If they add details (e.g. the area of the city), call ask_wingman again with the fuller request.
 - If the call is ending while something is still being looked up, tell them you'll send it on WhatsApp — Wingman does that automatically.
 - Actions like sending an email, posting, cancelling or deleting: ask_wingman gets them ready; tell the user it's ready and they can confirm with a "yes" on WhatsApp. Do not claim it's done.
 - Stay on as long as they want to talk. Never rush them off.
@@ -47,6 +47,9 @@ function askToolBody(url, secret) {
       description: "Ask Wingman's brain anything the user wants during the call: fresh details about their emails, calendar, tasks, bills, deliveries, store, health, people or the web (flights, hotels, news…), or to prepare an action (email, post, event). Returns { answer } to speak — or, for a longer lookup, { status: 'working', job_id }: keep talking and fetch it with wingman_result.",
       response_timeout_secs: 20,
       pre_tool_speech: 'force',
+      // Soft typing sound after the agent's one-liner, so the line never feels dead.
+      tool_call_sound: 'typing',
+      tool_call_sound_behavior: 'auto',
       api_schema: {
         url,
         method: 'POST',
@@ -73,6 +76,8 @@ function resultToolBody(url, secret) {
       description: "Get the answer to a lookup that ask_wingman said is still 'working'. Call it after the user's next reply. Returns { answer } — or { status: 'working' } again, then keep chatting and retry after another exchange.",
       response_timeout_secs: 10,
       pre_tool_speech: 'off',
+      tool_call_sound: 'typing',
+      tool_call_sound_behavior: 'always',
       api_schema: {
         url,
         method: 'POST',
