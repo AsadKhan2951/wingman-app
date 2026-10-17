@@ -51,6 +51,13 @@ const config = {
   // closed (they used to fall back to 'wingman', or to "open").
   adminPassword: process.env.ADMIN_PASSWORD || '',
 
+  phone: {
+    // Country code assumed for numbers stored/typed WITHOUT one (03001234567,
+    // 3001234567 — old rows). Full international numbers always match exactly;
+    // this only decides which country a bare 10-digit number belongs to.
+    legacyCountryCode: (process.env.LEGACY_PHONE_COUNTRY_CODE ?? '92').replace(/\D/g, ''),
+  },
+
   security: {
     // Signs connect links (/auth/google?phone=…&sig=…) and OAuth `state`, so
     // nobody can attach their own Google/Shopify account to someone else's

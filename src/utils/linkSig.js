@@ -14,6 +14,7 @@
 
 const crypto = require('crypto');
 const config = require('../config');
+const { phoneKey } = require('./phone');
 
 let warned = false;
 function secret() {
@@ -36,11 +37,6 @@ function safeEqual(a, b) {
   return x.length === y.length && crypto.timingSafeEqual(x, y);
 }
 
-/** Matching key for a phone (last 10 digits, like users.normPhone). */
-function phoneKey(phone) {
-  const d = String(phone || '').replace(/\D/g, '');
-  return d.length > 10 ? d.slice(-10) : d.replace(/^0+/, '');
-}
 
 /** Signature that lets this phone's owner start a connect flow. */
 function connectSig(phone) {

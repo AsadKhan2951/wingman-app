@@ -1,23 +1,14 @@
 'use strict';
 
 const { db, uuid } = require('./index');
+const { phoneKey } = require('../utils/phone');
 
 const DEFAULT_SKILLS = [
   'travel_assistant', 'bill_tracker', 'delivery_tracker', 'people_crm', 'followup_tracker',
 ];
 
-/**
- * Canonical phone key for MATCHING (not for sending). Matches on the last 10
- * digits so the SAME person's number unifies across every format seen in the
- * wild: 03007070177, 3007070177, 923007070177, +923007070177 → all "3007070177".
- * (Earlier we only stripped '+'/leading-zeros, which missed the country-code
- * form — that's how 0300… and 92300… ended up as two accounts.)
- */
-function normPhone(p) {
-  const d = String(p || '').replace(/\D/g, '');
-  if (!d) return '';
-  return d.length > 10 ? d.slice(-10) : d.replace(/^0+/, '');
-}
+// Canonical matching key — full numbers match exactly; see utils/phone.js.
+const normPhone = phoneKey;
 
 /** Prefer a full, dialable international number when choosing which row to keep. */
 function phoneQuality(p) {
@@ -38,8 +29,8 @@ function getByPhone(phone) {
   if (!row) {
     const n = normPhone(phone);
     if (n) {
-      // Match on the normalized (last-10) key across all stored formats. The user
-      // base is small, so a scan is fine; prefer the most dialable row on ties.
+      // Match on the canonical key across all stored formats. The user base is
+      // small, so a scan is fine; prefer the most dialable row on ties.
       const matches = db.prepare('SELECT * FROM users').all().filter((r) => normPhone(r.phone) === n);
       matches.sort((a, b) => phoneQuality(b.phone) - phoneQuality(a.phone));
       row = matches[0] || null;

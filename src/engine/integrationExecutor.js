@@ -19,7 +19,7 @@ const config = require('../config');
 const composio = require('../services/composio');
 const actions = require('../db/integrationActions');
 const agentActions = require('../db/agentActions');
-const { managementToolNames } = require('./integrationTools');
+const { managementToolNames, APPROVAL_TOOL_NAMES } = require('./integrationTools');
 
 const DISCONNECT = '__DISCONNECT__';
 
@@ -55,6 +55,20 @@ const BUILTIN_GATED = new Set([
   'send_business_email', 'reply_business_email',
   'delete_event', 'delete_drive_file', 'share_drive_file',
 ]);
+// Built-ins that are only outward-facing for some inputs, or that persist
+// instructions which later run on their own:
+//  - create_event / update_event WITH attendees: Google emails the invite (and
+//    the description) to those people.
+//  - create_automation: a standing instruction that later runs unattended —
+//    an instruction planted in an email/web page must not install itself.
+function builtinNeedsYes(name, input = {}) {
+  if (BUILTIN_GATED.has(name)) return true;
+  if (name === 'create_event' || name === 'update_event') {
+    return Array.isArray(input && input.attendees) && input.attendees.some((a) => String(a || '').trim());
+  }
+  return name === 'create_automation';
+}
+
 let builtinRunner = null;
 /** conversation.js registers how to actually run a built-in tool after the yes. */
 function setBuiltinRunner(fn) { builtinRunner = fn; }
@@ -82,6 +96,12 @@ function builtinPreview(slug, a = {}) {
       return `Cancel calendar event ${a.event_id || a.id || ''} (guests are notified)`;
     case 'delete_drive_file':
       return `Delete Drive file ${a.file_id || a.id || ''} (moves to Trash)`;
+    case 'create_event':
+      return `Create calendar event "${clip(a.title || '(untitled)', 80)}" at ${a.start_time || '?'} and email the invite to ${(a.attendees || []).join(', ')}`;
+    case 'update_event':
+      return `Update calendar event ${a.event_id || ''} and email the change to ${(a.attendees || []).join(', ')}`;
+    case 'create_automation':
+      return `New automation (${[a.kind, a.weekday, a.date, a.time].filter(Boolean).join(' ') || 'scheduled'}): "${clip(a.instruction, 300)}"`;
     case 'share_drive_file':
       return `Share Drive file ${a.file_id || ''} with ${a.email || 'anyone who has the link'} (${a.can_edit ? 'can edit' : 'view only'})`;
     default:
@@ -202,7 +222,7 @@ async function listIntegrations(user) {
 async function executeIntegrationTool(user, toolUse, ctx = {}) {
   const { name, input = {} } = toolUse;
   try {
-    if (!config.composio.enabled) return { error: 'INTEGRATIONS_NOT_CONFIGURED' };
+    if (!config.composio.enabled && !APPROVAL_TOOL_NAMES.has(name)) return { error: 'INTEGRATIONS_NOT_CONFIGURED' };
 
     if (managementToolNames.has(name)) {
       switch (name) {
@@ -263,15 +283,12 @@ async function executeIntegrationTool(user, toolUse, ctx = {}) {
 
 /**
  * A built-in critical tool (send_email, delete_event, …) was called. Park it
- * for the user's yes exactly like an app tool. When the approval tools aren't
- * available (Composio off) it runs directly in chat as before — but never in
- * an automated run.
+ * for the user's yes exactly like an app tool — always. (It used to run
+ * straight away whenever Composio wasn't configured, which silently removed
+ * the gate on deployments without a Composio key.) The built-in runner is
+ * conversation.js's; propose()/approve() don't need Composio.
  */
-async function gateBuiltin(user, name, input, ctx = {}, runNow) {
-  if (!config.composio.enabled) {
-    if (ctx.automated) return { error: 'NEEDS_USER_CONFIRMATION', detail: 'Automated runs cannot send or delete. Tell the user what you would do and let them confirm.' };
-    return runNow();
-  }
+async function gateBuiltin(user, name, input, ctx = {}) {
   return propose(user, { toolkit: BUILTIN, slug: name, version: null, args: input || {} }, ctx);
 }
 
@@ -302,7 +319,7 @@ async function proposeAutoApproveRule(user, { app, tool, about }, ctx = {}) {
  */
 function pendingActionsBlock(user) {
   try {
-    if (!config.composio.enabled || !user) return '';
+    if (!user) return '';
     actions.expireOld(config.composio.approvalTtlMinutes);
     const seen = new Set();
     const rows = actions.listPending(user.id).filter((r) => {
@@ -322,5 +339,5 @@ function pendingActionsBlock(user) {
 
 module.exports = {
   executeIntegrationTool, pendingActionsBlock, proposeAutoApproveRule,
-  gateBuiltin, setBuiltinRunner, BUILTIN_GATED,
+  gateBuiltin, setBuiltinRunner, BUILTIN_GATED, builtinNeedsYes,
 };

@@ -227,6 +227,7 @@ node scripts/test-engine-offline.js    # approval gate, loop end, tool memory, c
 node scripts/test-briefing-call.js     # voice briefings: calls, fallbacks, voice notes (fake ElevenLabs)
 node scripts/test-voice-chat.js        # chat voice notes on ElevenLabs (fake fetch)
 node scripts/test-accounts.js          # sign up / sign in / linking / reset (temp server)
+node scripts/test-security-fixes.js    # full-number phone match, sign-in ref, gate w/o Composio, specialists, automated runs
 docker exec wingman node scripts/eval-live.js   # real model, fake data, temp DB (~cents)
 ```
 
