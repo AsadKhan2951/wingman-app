@@ -1,5 +1,8 @@
 import { useSyncExternalStore } from 'react'
-import { NOW, TODAY, calendarDays, type CalEvent, type ChipTone } from './mock'
+import { NOW, TODAY, calendarDays as mockDays, type CalEvent, type ChipTone } from './mock'
+import { DEMO } from './demo'
+
+const calendarDays: typeof mockDays = DEMO ? mockDays : {}
 import { api } from './api'
 import { plural, t } from '../i18n'
 

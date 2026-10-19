@@ -1,13 +1,14 @@
 import { useSyncExternalStore } from 'react'
 import { email as seed, type EmailItem } from './mock'
 import { api } from './api'
+import { DEMO } from './demo'
 
 // The Email screen reads { needsReply, handled, handledToday }. We load the real
 // triaged mail from the backend and map it onto that shape, falling back to the
 // seed until it arrives. The screen's own gate (gmail connection) is real too.
 export type EmailView = { handledToday: number; needsReply: EmailItem[]; handled: EmailItem[] }
 
-const seedView = seed as unknown as EmailView
+const seedView: EmailView = DEMO ? (seed as unknown as EmailView) : { handledToday: 0, needsReply: [], handled: [] }
 
 let server: EmailView | null = null
 const listeners = new Set<() => void>()

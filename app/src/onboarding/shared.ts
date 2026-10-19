@@ -556,8 +556,27 @@ export function useResendTimer(active: boolean) {
 
 export function useCodeBoxes(code: string[], setCode: (c: string[]) => void) {
   const refs = useRef<Array<HTMLInputElement | null>>([])
+  // Spread several digits across the boxes. A whole code (6 digits) always
+  // starts at the first box, wherever it was typed.
+  const fill = (start: number, digits: string) => {
+    const from = digits.length >= code.length ? 0 : start
+    const next = [...code]
+    digits.slice(0, code.length - from).split('').forEach((d, j) => {
+      next[from + j] = d
+    })
+    setCode(next)
+    refs.current[Math.min(from + digits.length, code.length - 1)]?.focus()
+  }
   const onChange = (i: number, raw: string) => {
-    const d = raw.replace(/\D/g, '').slice(-1)
+    const digits = raw.replace(/\D/g, '')
+    // iOS one-time-code autofill and the keyboard's "From WhatsApp" code
+    // suggestion insert the whole code into one box as a change, not a paste
+    // — keeping only the last digit dropped the rest. The newest digits are
+    // at the end (the box may already have held one).
+    if (digits.length >= code.length) return fill(0, digits.slice(-code.length))
+    if (digits.length > 2) return fill(i, digits)
+    // One digit typed (two when the box already held one: keep the new one).
+    const d = digits.slice(-1)
     const next = [...code]
     next[i] = d
     setCode(next)

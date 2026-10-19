@@ -1,6 +1,8 @@
 import { useSyncExternalStore } from 'react'
 import { connectors as seed, type Connector, type ConnectorStatus } from './mock'
 import { api } from './api'
+import { DEMO } from './demo'
+import { getSession } from './session'
 
 type Overrides = Record<string, boolean>
 
@@ -34,7 +36,9 @@ const write = (next: Overrides) => {
 
 const statusOf = (o: Overrides, c: Connector): ConnectorStatus => {
   if (c.status === 'soon') return 'soon'
-  const on = o[c.key] ?? c.status === 'connected'
+  // Outside demo mode nothing shows connected until the backend says so
+  // (WhatsApp counts as connected once the user is signed in).
+  const on = o[c.key] ?? (DEMO ? c.status === 'connected' : c.key === 'whatsapp' && getSession().signedIn)
   return on ? 'connected' : 'connect'
 }
 

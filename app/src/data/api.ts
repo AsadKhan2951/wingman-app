@@ -7,6 +7,8 @@
 // backend), otherwise the live server. CORS on the backend is open, so the
 // app can call it straight from the browser with a Bearer token.
 
+import { DEMO } from './demo'
+
 const BASE = (import.meta.env.VITE_API_BASE as string | undefined)?.replace(/\/$/, '') ?? 'https://imyourwingman.ai'
 
 const TOKEN_KEY = 'wingman.token'
@@ -153,7 +155,16 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
   }
   // some endpoints (logout) may return empty
   const text = await res.text()
-  return (text ? JSON.parse(text) : {}) as T
+  const data = text ? JSON.parse(text) : {}
+  // Without a valid token (none, or an expired one) the backend answers with a
+  // sample dataset marked `mock: true`. That is for demo screenshots only — a
+  // real user must never see it as their own tasks, mail or calendar.
+  if (data && (data as { mock?: unknown }).mock === true && !DEMO) {
+    if (getToken()) setToken(null) // the token no longer works: sign in again
+    window.dispatchEvent(new Event('wingman:session-ended'))
+    throw new ApiError(401, 'Your session has ended. Please sign in again.')
+  }
+  return data as T
 }
 
 const get = <T>(path: string) => req<T>('GET', path)

@@ -24,8 +24,9 @@ export const confirmSignOut = async () => {
     cancelLabel: 'Stay signed in',
   })
   if (!ok) return
-  signOut()
+  await signOut()
   navigate('welcome')
+  window.location.reload() // drop every in-memory copy of the account's data
 }
 
 
