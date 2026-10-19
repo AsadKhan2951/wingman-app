@@ -134,7 +134,7 @@ const INTRO = [
 export const Onboarding = ({ onDone }: { onDone: () => void }) => {
   const ob = useOnboarding()
   const {
-    state, set, go, toggleSkill, toggleInterest, connect, fullPhone, phoneValid, codeComplete, nameValid, preview,
+    state, set, go, toggleSkill, toggleInterest, fullPhone, phoneValid, codeComplete, nameValid, preview,
     busy, sendCode, verifyCode, finish, openConnect, refreshConnections, locateMe, applySignedIn,
   } = ob
 
@@ -809,12 +809,9 @@ export const Onboarding = ({ onDone }: { onDone: () => void }) => {
                 ) : (
                   <button
                     className="st"
-                    onClick={() => {
-                      connect('Apple Health & Google Fit')
-                      toast(t('Health connected'))
-                    }}
+                    onClick={() => toast(t('You can connect Health from Settings once you finish setup.'))}
                   >
-                    {t('Connect')}
+                    {t('Set up later')}
                   </button>
                 )}
               </div>

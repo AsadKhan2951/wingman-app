@@ -34,12 +34,17 @@ const write = (next: Overrides) => {
 
 const statusOf = (o: Overrides, c: Connector): ConnectorStatus => {
   if (c.status === 'soon') return 'soon'
-  const on = o[c.key] ?? c.status === 'connected'
+  // Only WhatsApp is connected by default (they verified their number to get
+  // in). Everything else is connected only when the backend says so — the seed's
+  // demo "connected" made new users see Gmail/Calendar/Shopify as connected.
+  const on = o[c.key] ?? c.key === 'whatsapp'
   return on ? 'connected' : 'connect'
 }
 
 export const connect = (key: string) => write({ ...current, [key]: true })
 export const disconnect = (key: string) => write({ ...current, [key]: false })
+/** Forget everything (sign-out / a different user on this device). */
+export const resetConnections = () => write({})
 
 export type ConnectionView = {
   items: Connector[]
@@ -85,6 +90,8 @@ export const hydrateConnections = async (): Promise<void> => {
       gcal: !!me.calendar_connected,
       health: !!me.health_connected,
       webmail: !!me.webmail_connected,
+      shopify: !!me.shopify_connected,
+      ga: false,
     })
   } catch {
     /* keep what we have */

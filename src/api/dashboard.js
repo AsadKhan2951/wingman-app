@@ -153,6 +153,7 @@ router.get('/me', async (req, res) => {
     gmail_connected: require('../auth/googleAuth').isEmailConnected(u),
     calendar_connected: require('../auth/googleAuth').isConnected(u),
     webmail_connected: !!u.webmail_address,
+    shopify_connected: !!(u.shopify_domain && u.shopify_token),
     webmail_address: u.webmail_address || null,
     wingman_number: config.wingmanNumber || null,
     // Lets the app open signed connect links (/auth/google?phone=…&sig=…).

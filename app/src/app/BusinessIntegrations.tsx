@@ -70,7 +70,7 @@ export const BusinessIntegrations = () => {
                 <ConnectorMark brandKey={c.key} icon={c.icon} tone={c.tone} size={24} />
                 <div className="wg-integ__tx">
                   <div className="wg-integ__name">{c.name}</div>
-                  <div className="wg-integ__sync">{t(bc.sync[c.key] ?? '')}</div>
+                  <div className="wg-integ__sync">{c.status === 'connected' ? t(bc.sync[c.key] ?? '') : ''}</div>
                 </div>
                 <span className={`wg-mstatus ${st.tone}`}>{t(st.label)}</span>
               </div>

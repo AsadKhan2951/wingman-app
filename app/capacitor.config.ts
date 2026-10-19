@@ -11,7 +11,8 @@ const config: CapacitorConfig = {
   server: { androidScheme: 'https' },
   ios: { contentInset: 'never' },
   plugins: {
-    SplashScreen: { launchAutoHide: false, backgroundColor: '#ffffff', showSpinner: false },
+    // CENTER_CROP: the default FIT_XY stretched the logo on tall phones.
+    SplashScreen: { launchAutoHide: false, backgroundColor: '#ffffff', showSpinner: false, androidScaleType: 'CENTER_CROP' },
   },
 }
 

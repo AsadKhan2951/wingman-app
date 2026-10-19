@@ -47,9 +47,23 @@ export const markOnboarded = () => write({ onboarded: true })
 
 export const signIn = () => write({ signedIn: true })
 
+// The next person on this device must not inherit the last one's connectors.
+const forgetConnections = () => {
+  try {
+    localStorage.removeItem('wingman.connections')
+  } catch {
+    /* ignore */
+  }
+  void import('./connections').then((m) => m.resetConnections())
+}
+
 export const signOut = () => {
   setToken(null)
+  forgetConnections()
   write({ signedIn: false })
 }
 
-export const startFresh = () => write({ onboarded: false, signedIn: false })
+export const startFresh = () => {
+  forgetConnections()
+  write({ onboarded: false, signedIn: false })
+}

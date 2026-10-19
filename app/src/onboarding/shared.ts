@@ -557,11 +557,24 @@ export function useResendTimer(active: boolean) {
 export function useCodeBoxes(code: string[], setCode: (c: string[]) => void) {
   const refs = useRef<Array<HTMLInputElement | null>>([])
   const onChange = (i: number, raw: string) => {
-    const d = raw.replace(/\D/g, '').slice(-1)
+    const digits = raw.replace(/\D/g, '')
+    // Autofill (keyboard suggestion / one-time-code) drops the WHOLE code into
+    // one box — spread it across the boxes instead of keeping one digit.
+    if (digits.length >= 4) {
+      const start = digits.length >= 6 ? 0 : i
+      const next = [...code]
+      digits.slice(0, 6 - start).split('').forEach((d, j) => {
+        next[start + j] = d
+      })
+      setCode(next)
+      const last = Math.min(start + digits.length, 6) - 1
+      refs.current[last]?.focus()
+      return
+    }
     const next = [...code]
-    next[i] = d
+    next[i] = digits.slice(-1)
     setCode(next)
-    if (d && i < 5) refs.current[i + 1]?.focus()
+    if (digits && i < 5) refs.current[i + 1]?.focus()
   }
   const onKeyDown = (i: number, e: React.KeyboardEvent) => {
     if (e.key === 'Backspace' && !code[i] && i > 0) refs.current[i - 1]?.focus()
