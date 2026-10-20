@@ -16,8 +16,23 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    // Play upload key. Path + passwords live in ~/.gradle/gradle.properties
+    // (WINGMAN_STORE_FILE, WINGMAN_STORE_PASSWORD, WINGMAN_KEY_ALIAS,
+    // WINGMAN_KEY_PASSWORD) — never in this repo. Without them a release build
+    // is unsigned and Play rejects it.
+    signingConfigs {
+        release {
+            if (project.hasProperty('WINGMAN_STORE_FILE')) {
+                storeFile file(WINGMAN_STORE_FILE)
+                storePassword WINGMAN_STORE_PASSWORD
+                keyAlias WINGMAN_KEY_ALIAS
+                keyPassword WINGMAN_KEY_PASSWORD
+            }
+        }
+    }
     buildTypes {
         release {
+            signingConfig signingConfigs.release
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }

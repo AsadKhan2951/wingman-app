@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react'
-import { isSignedIn, setToken } from './api'
+import { api, isSignedIn } from './api'
 
 export type Session = { onboarded: boolean; signedIn: boolean }
 
@@ -57,10 +57,36 @@ const forgetConnections = () => {
   void import('./connections').then((m) => m.resetConnections())
 }
 
-export const signOut = () => {
-  setToken(null)
+// Device preferences (theme, language) survive a sign-out; everything else in
+// local storage belonged to the account and is removed.
+const KEEP = new Set(['wingman.prefs', 'wingman.agent'])
+export const clearAccountData = () => {
+  try {
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const k = localStorage.key(i)
+      if (k && k.startsWith('wingman.') && !KEEP.has(k)) localStorage.removeItem(k)
+    }
+  } catch {
+    /* storage unavailable */
+  }
   forgetConnections()
-  write({ signedIn: false })
+}
+
+/** End the session on the server too (the token stops working), then wipe the
+ *  account's data from this device. The caller reloads the app so no
+ *  in-memory copy survives either. */
+export const signOut = async () => {
+  await api.logout().catch(() => {}) // clears the token even if the request fails
+  clearAccountData()
+  write({ onboarded: true, signedIn: false })
+}
+
+// The API saw the token stop working (expired / revoked): send the user to
+// sign in rather than showing an empty app.
+if (typeof window !== 'undefined') {
+  window.addEventListener('wingman:session-ended', () => {
+    if (current.signedIn) write({ signedIn: false })
+  })
 }
 
 export const startFresh = () => {

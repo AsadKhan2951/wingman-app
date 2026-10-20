@@ -5,7 +5,8 @@
  *
  * Two kinds of tools:
  *  1. The static management tools below — list / connect / disconnect apps and
- *     approve / cancel a pending action. Always present when Composio is on.
+ *     approve / cancel a pending action. Always present when Composio is on;
+ *     approve / cancel are present even when it is off (built-in actions).
  *  2. Per-user app tools (e.g. OUTLOOK_SEND_EMAIL, HUBSPOT_CREATE_DEAL) loaded at
  *     runtime for whatever apps THIS user has connected — see
  *     integrationToolsForUser(). Their names are Composio slugs.
@@ -90,20 +91,21 @@ const managementTools = [
 
 const managementToolNames = new Set(managementTools.map((t) => t.name));
 
+// Built-in sends/deletes (send_email, delete_event…) wait for a yes whether or
+// not Composio is configured, so approve/cancel must always be available.
+const APPROVAL_TOOL_NAMES = new Set(['approve_integration_action', 'cancel_integration_action']);
+const approvalTools = managementTools.filter((t) => APPROVAL_TOOL_NAMES.has(t.name));
+
 /**
  * The full integration tool set for this user this turn:
  * { tools: [...anthropic tools], names: Set<string> } — names is what the
  * conversation loop uses to route a tool_use block to integrationExecutor.
  */
 async function integrationToolsForUser(user) {
-  if (!config.composio.enabled) {
-    // Only the yes/no tools, for built-in actions that always wait (rides).
-    const tools = managementTools.filter((t) => t.name === 'approve_integration_action' || t.name === 'cancel_integration_action');
-    return { tools, names: new Set(tools.map((t) => t.name)) };
-  }
+  if (!config.composio.enabled) return { tools: approvalTools, names: new Set(APPROVAL_TOOL_NAMES) };
   const appTools = await composio.toolsForUser(user); // never throws
   const tools = [...managementTools, ...appTools];
   return { tools, names: new Set(tools.map((t) => t.name)) };
 }
 
-module.exports = { managementTools, managementToolNames, integrationToolsForUser };
+module.exports = { managementTools, managementToolNames, APPROVAL_TOOL_NAMES, integrationToolsForUser };
