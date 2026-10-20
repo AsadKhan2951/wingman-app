@@ -168,6 +168,7 @@ async function executeGmailTool(user, toolUse) {
           account,
         });
         try { contactsRepo.recordInteraction(user.id, { email: to, at: new Date().toISOString() }); } catch (_) {}
+        try { require('../db/emailItems').markReplied(user.id, input.email_id); } catch (_) { /* best effort */ }
         return { sent: true, to, subject };
       }
 

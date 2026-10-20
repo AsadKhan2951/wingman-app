@@ -66,7 +66,7 @@ const gmailTools = [
       properties: {
         to: { type: 'string', description: 'Recipient email address (must be a valid address, not a name).' },
         subject: { type: 'string', description: 'Email subject line.' },
-        body: { type: 'string', description: 'Plain-text email body. Write it in full, professionally, signed off appropriately.' },
+        body: { type: 'string', description: 'Plain-text email body, written in full AS the user — their greeting, tone, length and sign-off (see WRITING EMAILS AS … in your instructions).' },
       },
       required: ['to', 'subject', 'body'],
     },
@@ -81,7 +81,7 @@ const gmailTools = [
       type: 'object',
       properties: {
         email_id: { type: 'string', description: 'The Gmail message id to reply to (from list_recent_emails).' },
-        body: { type: 'string', description: 'Plain-text reply body, written in full.' },
+        body: { type: 'string', description: 'Plain-text reply body, written in full AS the user — their greeting, tone, length and sign-off.' },
       },
       required: ['email_id', 'body'],
     },

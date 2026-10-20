@@ -44,6 +44,7 @@ async function executeWebmailTool(user, toolUse) {
         if (!uid) return { error: 'INVALID_UID', detail: 'Pass the uid of the email to reply to.' };
         const r = await webmail.replyMessage(user, uid, input.body || '');
         try { if (r.to) contactsRepo.recordInteraction(user.id, { email: r.to, at: new Date().toISOString() }); } catch (_) {}
+        try { require('../db/emailItems').markReplied(user.id, `webmail:${uid}`); } catch (_) { /* best effort */ }
         return { sent: true, from: r.from, to: r.to, subject: r.subject };
       }
 

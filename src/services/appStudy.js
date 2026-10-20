@@ -451,7 +451,7 @@ function knowledgeBlock(user) {
     if (!rows.length && !profile && !cardText) return '';
 
     const parts = [];
-    if (cardText) parts.push(`PROFILE CARD (who they are — your distilled picture):\n${cardText.slice(0, 2000)}`);
+    if (cardText) parts.push(`OPERATING MANUAL (how to run things for them — built from everything you've seen):\n${cardText.slice(0, 3200)}\nWork from this like their chief of staff: rank by their PRIORITIES, treat KEY PEOPLE as tiered, handle what you can handle for them, and bring them decisions — not homework.`);
     else if (profile) parts.push(`OVERALL (from their email, calendar and tasks):\n${profile.slice(0, 900)}`);
     for (const r of rows.slice(0, 10)) {
       parts.push(`${appName(r.app).toUpperCase()} — ${stage(r)}${r.note ? `\n${String(r.note).slice(0, 1600)}` : ''}`);

@@ -47,7 +47,7 @@ const webmailTools = [
       properties: {
         to: { type: 'string', description: 'Recipient email address.' },
         subject: { type: 'string', description: 'Subject line.' },
-        body: { type: 'string', description: 'Full plain-text body, written out properly with a sign-off.' },
+        body: { type: 'string', description: 'Full plain-text body, written AS the user — their greeting, tone, length and sign-off.' },
       },
       required: ['to', 'subject', 'body'],
     },
@@ -63,7 +63,7 @@ const webmailTools = [
       type: 'object',
       properties: {
         uid: { type: 'number', description: 'The uid of the message to reply to (from list_business_emails).' },
-        body: { type: 'string', description: 'Full plain-text reply body, written out properly with a sign-off.' },
+        body: { type: 'string', description: 'Full plain-text reply body, written AS the user — their greeting, tone, length and sign-off.' },
       },
       required: ['uid', 'body'],
     },

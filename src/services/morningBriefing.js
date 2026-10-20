@@ -108,6 +108,12 @@ function format(user, agg) {
     lines.push('');
   }
 
+  // Chief of staff: what Wingman is handling today, and what needs their yes.
+  try {
+    const plan = require('./chiefOfStaff').morningPlan(user, { eventsToday: agg.events });
+    if (plan) { lines.push(plan); lines.push(''); }
+  } catch (_) { /* the briefing still goes out */ }
+
   // Tasks
   lines.push(`\u2705 *Tasks Due Today:*`);
   if (agg.tasksDue.length) {

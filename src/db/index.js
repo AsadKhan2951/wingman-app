@@ -55,6 +55,11 @@ function initSchema() {
  */
 function applyMigrations() {
   const additions = {
+    // Scope of an earned "do without asking" rule (services/autonomy), e.g. the
+    // one recipient a reply rule covers. NULL = the whole tool.
+    user_rules: [
+      ['scope', 'TEXT'],
+    ],
     // 1 = the user connected this app themselves just now and was told Wingman is
     // studying it; 0 = studied quietly (it was already connected), so stay quiet.
     app_knowledge: [
@@ -142,6 +147,11 @@ function applyMigrations() {
       ['account_email', 'TEXT'],
       // When the email actually ARRIVED (created_at is when Wingman processed it).
       ['received_at', 'TEXT'],
+      // Replies Wingman drafts in the user's voice (services/replyDrafter).
+      ['prepared_reply', 'TEXT'],
+      ['prepared_note', 'TEXT'],
+      ['prepared_at', 'TEXT'],
+      ['replied_at', 'TEXT'],
     ],
     meetings: [
       ['recording_url', 'TEXT'],

@@ -15,16 +15,31 @@ const brainTools = [
       'kind = auto_approve (a specific app action may run without asking — give app and the exact CAPITALS ' +
       'tool name; the user must confirm this rule once with a yes) · always_ask (always get a yes before ' +
       'something) · notify_mute (don\'t proactively tell them about something) · notify_always (always tell ' +
-      'them about something). Write "about" as a short, specific sentence in English.',
+      'them about something) · behavior (HOW you should talk or act from now on — any correction of your tone, ' +
+      'length, language, format, wording or habits: "too long", "chhota likho", "no emojis", "don\'t call me sir", ' +
+      '"always reply in Roman Urdu", "stop summarising at the end", "in emails never say sorry for the delay"). ' +
+      'Save a behavior rule THE MOMENT they correct you, even if they only grumble ("itna lamba kyun?"), then follow it. ' +
+      'Write "about" as a short, specific instruction in English, e.g. "Keep replies to 2-3 short lines".',
     input_schema: {
       type: 'object',
       properties: {
-        kind: { type: 'string', enum: ['auto_approve', 'always_ask', 'notify_mute', 'notify_always'] },
+        kind: { type: 'string', enum: ['auto_approve', 'always_ask', 'notify_mute', 'notify_always', 'behavior'] },
         about: { type: 'string', description: 'What the rule covers, e.g. "Posting to the Wingman Posting Facebook page" or "Newsletter and promotional emails".' },
         app: { type: 'string', description: 'For auto_approve: the app slug, e.g. "slack", "facebook".' },
         tool: { type: 'string', description: 'For auto_approve: the exact CAPITALS tool name, e.g. "SLACK_SEND_MESSAGE".' },
       },
       required: ['kind', 'about'],
+    },
+  },
+  {
+    name: 'grant_autonomy',
+    description:
+      'The user just said YES to your offer to do a kind of action without asking from now on (the offer came back as ' +
+      'autonomy_offer on an approved action). Saves it. Only for an offer you actually made — never on your own.',
+    input_schema: {
+      type: 'object',
+      properties: { offer_key: { type: 'string', description: 'The offer_key from autonomy_offer.' } },
+      required: ['offer_key'],
     },
   },
   {

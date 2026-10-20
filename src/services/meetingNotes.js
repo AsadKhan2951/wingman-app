@@ -18,7 +18,9 @@ Return ONLY a JSON object, no markdown and no commentary, with exactly this shap
   "decisions": ["a decision that was made", "..."],
   "actions": [{ "task": "what needs doing", "owner": "person's name, or empty string if unassigned", "due": "when, e.g. 'Friday' or 'Next week', or empty string", "priority": "High" | "Medium" | "Low" }],
   "openQuestions": ["something left unresolved", "..."],
-  "followUps": ["a follow-up to schedule or send", "..."]
+  "followUps": ["a follow-up to schedule or send", "..."],
+  "agenda": [{ "item": "an agenda point", "status": "done" | "partial" | "not_discussed", "note": "one line: where it landed / what is still open" }],
+  "unresolved": ["a topic that still needs another conversation or meeting to close", "..."]
 }
 
 Rules:
@@ -26,6 +28,8 @@ Rules:
 - Use an empty array [] for any section with nothing in it.
 - Keep each item short and concrete.
 - Owner must be a name that appears in the notes/attendees, otherwise empty string.
+- "agenda": only when an AGENDA is given. One entry per agenda point, in order: "done" = settled/decided, "partial" = discussed but not closed, "not_discussed" = never came up. Judge only from the notes. With no agenda, use [].
+- "unresolved": topics (from the agenda OR the discussion) that were left open and need the people to meet or talk again — not small to-dos that one person can just do (those are actions). [] if everything landed.
 - CRITICAL: If the notes are missing, empty, unintelligible, corrupted, just filler/repetition, or contain no real meeting discussion, set "noContent": true, "overview": "" and EVERY array empty. In that case do NOT describe the recording or transcript quality, and do NOT invent any action items, questions or follow-ups. Otherwise set "noContent": false.`;
 
 function extractJson(text) {
@@ -58,6 +62,14 @@ function normalize(p) {
       .filter((a) => a.task),
     openQuestions: strArr(o.openQuestions),
     followUps: strArr(o.followUps),
+    agenda: (Array.isArray(o.agenda) ? o.agenda : [])
+      .map((a) => ({
+        item: String((a && a.item) || '').trim(),
+        status: ['done', 'partial', 'not_discussed'].includes(a && a.status) ? a.status : 'partial',
+        note: String((a && a.note) || '').trim(),
+      }))
+      .filter((a) => a.item),
+    unresolved: strArr(o.unresolved),
   };
 }
 
@@ -65,7 +77,7 @@ function normalize(p) {
  * @param {{ title?: string, attendees?: Array<{name?:string}>, notes?: string }} meeting
  * @returns {Promise<object>} normalized summary
  */
-async function summarize({ title, attendees = [], notes } = {}) {
+async function summarize({ title, attendees = [], notes, agenda = '' } = {}) {
   const who = (Array.isArray(attendees) ? attendees : [])
     .map((a) => a && a.name)
     .filter(Boolean)
@@ -74,6 +86,7 @@ async function summarize({ title, attendees = [], notes } = {}) {
   const prompt = [
     title ? `Meeting: ${title}` : null,
     who ? `Attendees: ${who}` : null,
+    agenda && String(agenda).trim() ? `AGENDA (from the calendar invite):\n${String(agenda).trim().slice(0, 2000)}` : null,
     '',
     'Raw notes:',
     (notes && String(notes).trim()) || '(no notes were taken)',

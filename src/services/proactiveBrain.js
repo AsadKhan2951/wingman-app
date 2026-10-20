@@ -92,8 +92,22 @@ function snapshot(user, now = new Date()) {
   if (followups && followups.listOpen) {
     for (const f of followups.listOpen(uid) || []) {
       if (f.type === 'promise_made') signals.push(`Open promise: you said you'd ${f.description}`);
+      // Someone owes them something from a meeting and it's been 2+ days.
+      else if (f.type === 'promise_received' && /\(from "/.test(f.description || '')
+        && f.created_at && now - Date.parse(String(f.created_at).replace(' ', 'T') + 'Z') > 2 * 86400e3) {
+        context.push(`${f.counterparty || 'Someone'} still owes: ${f.description} — offer to nudge them`);
+      }
     }
   }
+
+  // Meetings that ended with points still open and a follow-up nobody booked.
+  try {
+    for (const p of require('./meetingFollowup').listPending(uid, now)) {
+      if (now - Date.parse(String(p.created_at).replace(' ', 'T') + 'Z') > 20 * 3600e3) {
+        signals.push(`Unbooked meeting follow-up "${p.title}" — still open: ${p.items.join('; ')} (followup_id ${p.id}). Offer to book it.`);
+      }
+    }
+  } catch (_) { /* optional */ }
 
   // Health — the analyst's own flags.
   const health = svc('health');

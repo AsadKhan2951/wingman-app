@@ -70,6 +70,12 @@ async function runHourlyTick(now = new Date()) {
   await step('app study', () => require('./appStudy').runDue({ now }));
   // Re-distil each user's profile card when what we know about them changed.
   await step('profile cards', () => require('./userProfile').runDue());
+  // Keep learning every user, not only the ones chatting right now: facts and
+  // their corrections (rules) from recent chat, and how they write.
+  await step('behaviour learner', () => require('./behaviorLearner').runAllUsers());
+  await step('style profiles', () => require('./styleProfile').runDue({ now }));
+  // Chief-of-staff inbox: replies drafted in their voice before they ask.
+  await step('reply drafts', () => require('./replyDrafter').runDue());
 }
 
 /**

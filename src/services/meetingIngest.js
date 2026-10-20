@@ -167,7 +167,10 @@ async function processTranscript(user, meeting, transcript, opts = {}) {
     return { meeting: meetingsRepo.getForUser(user.id, meeting.id), summary: null, email: null, tasks: [], empty: true };
   }
 
-  const summary = await meetingNotes.summarize({ title: meeting.title, attendees: meeting.attendees, notes: transcript });
+  // The agenda from the calendar invite, so the summary says which points were
+  // closed and which are still open (→ the follow-up agent below).
+  const agenda = require('./meetingFollowup').findAgenda(user.id, meeting);
+  const summary = await meetingNotes.summarize({ title: meeting.title, attendees: meeting.attendees, notes: transcript, agenda });
 
   // Even with enough characters, the audio may be silence, filler or garbled
   // (a solo/quiet test, or a bot that only heard the lobby). Trust the model's
@@ -185,6 +188,9 @@ async function processTranscript(user, meeting, transcript, opts = {}) {
   meetingsRepo.update(user.id, meeting.id, { summary, status: 'summary-ready' });
 
   const fresh = meetingsRepo.getForUser(user.id, meeting.id);
+  // Things left open → a proposed follow-up (sent with the notes on WhatsApp);
+  // other people's action items → follow-ups Wingman chases.
+  require('./meetingFollowup').prepare(user, fresh, summary);
 
   let email = null;
   if (emailUser) {
@@ -261,6 +267,16 @@ function formatNotesMessage(meeting, summary) {
   const recUrl = (meeting && (meeting.recording_url || meeting.recordingUrl)) || '';
   lines.push('', `I've emailed you the full summary${actions.length ? ' and added these to your Tasks' : ''}.`);
   if (recUrl) lines.push(`🎥 Recording: ${recUrl}`);
+
+  // What's still open + the follow-up Wingman proposes (if the meeting left any).
+  try {
+    const uid = meeting && meeting.user_id;
+    const user = uid ? require('../db/users').getById(uid) : null;
+    const fu = user ? require('./meetingFollowup') : null;
+    const plan = fu ? fu.forMeeting(uid, meeting.id) : null;
+    const extra = plan ? fu.proposalText(user, plan) : '';
+    if (extra) lines.push(extra);
+  } catch (_) { /* the notes still go out */ }
 
   return lines.join('\n');
 }

@@ -33,7 +33,7 @@ function upsert(userId, item) {
       UPDATE email_items SET
         account_id=COALESCE(@account_id, account_id), account_email=COALESCE(@account_email, account_email),
         subject=@subject, sender=@sender, category=@category, summary=@summary,
-        action_needed=@action_needed, replied=@replied, draft_reply=@draft_reply,
+        action_needed=@action_needed, replied=MAX(COALESCE(replied, 0), @replied), draft_reply=@draft_reply,
         detected_type=@detected_type, extracted_data=@extracted_data,
         received_at=COALESCE(@received_at, received_at)
       WHERE id=@id
@@ -51,6 +51,23 @@ function upsert(userId, item) {
        @action_needed, @replied, @draft_reply, @detected_type, @extracted_data, @received_at)
   `).run({ ...row, id });
   return id;
+}
+
+/** The user answered this email (from any route) — keep it marked even if re-scanned. */
+function markReplied(userId, gmailId) {
+  return db.prepare("UPDATE email_items SET replied = 1, replied_at = datetime('now'), prepared_reply = NULL WHERE user_id = ? AND gmail_id = ?")
+    .run(userId, String(gmailId)).changes;
+}
+
+/** A reply Wingman drafted in the user's voice, waiting for their yes. */
+function setPrepared(userId, id, { reply, note = null }) {
+  db.prepare("UPDATE email_items SET prepared_reply = ?, prepared_note = ?, prepared_at = datetime('now') WHERE id = ? AND user_id = ?")
+    .run(reply, note, id, userId);
+}
+
+function listPrepared(userId, limit = 10) {
+  return db.prepare(`SELECT * FROM email_items WHERE user_id = ? AND prepared_reply IS NOT NULL AND replied = 0
+    ORDER BY COALESCE(received_at, created_at) DESC LIMIT ?`).all(userId, limit);
 }
 
 /** One email item by its row id, scoped to the user. */
@@ -153,5 +170,5 @@ function deleteAllForUser(userId) {
 module.exports = {
   upsert, getById, existsByGmailId, listForUser, groupedByCategory,
   countsSince, countReplied, countPending, searchByKeyword, listByType,
-  listIdsByAccount, deleteByAccount, deleteAllForUser,
+  listIdsByAccount, deleteByAccount, deleteAllForUser, markReplied, setPrepared, listPrepared,
 };

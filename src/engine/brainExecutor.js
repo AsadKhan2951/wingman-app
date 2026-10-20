@@ -15,6 +15,7 @@ const KIND_LABEL = {
   always_ask: 'Always ask first',
   notify_mute: "Don't tell me about",
   notify_always: 'Always tell me about',
+  behavior: 'Always',
 };
 
 async function executeBrainTool(user, toolUse, ctx = {}) {
@@ -34,6 +35,11 @@ async function executeBrainTool(user, toolUse, ctx = {}) {
       const r = rules.add(user.id, { kind, text: input.about });
       if (r.reason === 'too_many') return { error: 'TOO_MANY_RULES', detail: 'Ask the user to remove an old rule first.' };
       return { saved: true, rule: `${KIND_LABEL[kind]}: ${String(input.about || '').trim()}`, note: 'Confirm it back to the user in one short line.' };
+    }
+
+    if (name === 'grant_autonomy') {
+      if (ctx.automated) return { error: 'NEEDS_USER_CONFIRMATION' };
+      return require('../services/autonomy').grant(user, String(input.offer_key || ''));
     }
 
     if (name === 'list_rules') {
@@ -74,9 +80,20 @@ function rulesBlock(user) {
     if (!user) return '';
     const rows = rules.listForUser(user.id);
     if (!rows.length) return '';
-    return '\n\n--- STANDING RULES THIS USER GAVE YOU ---\n' +
-      rows.map((r) => `- ${KIND_LABEL[r.kind] || r.kind}: ${r.text}`).join('\n') +
-      '\nFollow these exactly. They override your defaults about when to ask or tell — but never the system\'s own approval gate.';
+    const behavior = rows.filter((r) => r.kind === 'behavior');
+    const other = rows.filter((r) => r.kind !== 'behavior');
+    let out = '';
+    if (behavior.length) {
+      out += '\n\n--- THE USER\'S OWN RULES FOR YOU (their corrections — obey every one, in every reply) ---\n' +
+        behavior.map((r) => `- ${r.text}`).join('\n') +
+        '\nThese beat everything else in this prompt about tone, length, language, format and habits. Breaking one is the fastest way to lose their trust. Check your reply against them before sending.';
+    }
+    if (other.length) {
+      out += '\n\n--- STANDING RULES THIS USER GAVE YOU ---\n' +
+        other.map((r) => `- ${KIND_LABEL[r.kind] || r.kind}: ${r.text}`).join('\n') +
+        '\nFollow these exactly. They override your defaults about when to ask or tell — but never the system\'s own approval gate.';
+    }
+    return out;
   } catch (_) {
     return '';
   }

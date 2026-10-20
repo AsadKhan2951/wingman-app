@@ -179,6 +179,10 @@ CREATE TABLE IF NOT EXISTS email_items (
   detected_type TEXT,
   extracted_data TEXT,
   received_at TEXT,                     -- when it arrived (created_at = when Wingman processed it)
+  prepared_reply TEXT,                  -- reply Wingman drafted in the user's voice (replyDrafter)
+  prepared_note TEXT,                   -- what it needs from the user before sending, if anything
+  prepared_at TEXT,
+  replied_at TEXT,
   created_at TEXT DEFAULT (datetime('now'))
 );
 
@@ -456,6 +460,25 @@ CREATE TABLE IF NOT EXISTS meetings (
 );
 CREATE INDEX IF NOT EXISTS idx_meetings_user ON meetings(user_id);
 
+-- Follow-up meetings Wingman proposes when a meeting ends with things still
+-- open (services/meetingFollowup.js). pending → scheduled | dismissed.
+CREATE TABLE IF NOT EXISTS meeting_followups (
+  id TEXT PRIMARY KEY,
+  user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+  meeting_id TEXT,
+  title TEXT,
+  items TEXT DEFAULT '[]',        -- JSON: the open points
+  attendees TEXT DEFAULT '[]',    -- JSON [{ name, email, phone }]
+  proposed_start TEXT,            -- ISO, first free slot in their work hours
+  duration_min INTEGER DEFAULT 30,
+  status TEXT DEFAULT 'pending',
+  event_id TEXT,
+  scheduled_start TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_meeting_followups_user ON meeting_followups(user_id, status);
+
 -- ─── Meeting notetaker bot sessions ─────────────────────────────────
 -- One row per attempt to send the Wingman bot into a live call. The browser
 -- worker (separate host) drives the join/record; the backend owns scheduling,
@@ -577,6 +600,7 @@ CREATE TABLE IF NOT EXISTS user_rules (
   toolkit TEXT,
   tool_slug TEXT,
   text TEXT NOT NULL,
+  scope TEXT,                     -- earned autonomy: e.g. the one recipient it covers
   created_at TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_user_rules_user ON user_rules(user_id, kind);

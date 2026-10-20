@@ -84,12 +84,14 @@ router.post('/meetings/:id/finalize', async (req, res) => {
 
   let summary;
   try {
-    summary = await meetingNotes.summarize({ title: base.title, attendees: base.attendees, notes: base.notes });
+    const agenda = require('../services/meetingFollowup').findAgenda(u.id, base);
+    summary = await meetingNotes.summarize({ title: base.title, attendees: base.attendees, notes: base.notes, agenda });
   } catch (_) {
     return res.status(502).json({ error: 'Could not generate the summary right now' });
   }
   meetingsRepo.update(u.id, base.id, { summary, status: 'summary-ready' });
   const fresh = meetingsRepo.getForUser(u.id, base.id);
+  require('../services/meetingFollowup').prepare(u, fresh, summary);
 
   // Auto-deliver the notes to the user (email + WhatsApp + tasks) as soon as the
   // summary exists, so they're NEVER lost if the app closes before "approve" —

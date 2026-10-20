@@ -243,7 +243,9 @@ router.get('/emails', async (req, res) => {
     action_needed: !!e.action_needed,
     replied: !!e.replied,
     detected_type: e.detected_type || 'general',
-    draft_reply: e.draft_reply || null,
+    // Wingman's draft in their own voice wins over the scanner's generic one.
+    draft_reply: (!e.replied && e.prepared_reply) || e.draft_reply || null,
+    draft_note: (!e.replied && e.prepared_note) || null,
     // Source tag: business-mailbox rows are keyed webmail:<uid>; everything else
     // is Gmail. Lets the app label each email so the user can tell them apart.
     source: String(e.gmail_id || '').startsWith('webmail:') ? 'webmail' : 'gmail',

@@ -50,6 +50,8 @@ const { imageToolNames, imageToolsAvailable } = require('./imageTools');
 const { executeImageTool, recentImagesBlock } = require('./imageExecutor');
 const { brainTools, brainToolNames } = require('./brainTools');
 const { recordsTools, recordsToolNames } = require('./recordsTools');
+const { followupTools, followupToolNames, executeFollowupTool } = require('./followupTools');
+const { replyTools, replyToolNames, executeReplyTool } = require('./replyTools');
 const { executeRecordsTool } = require('./recordsExecutor');
 const { executeBrainTool, rulesBlock } = require('./brainExecutor');
 const appStudy = require('../services/appStudy');
@@ -232,7 +234,7 @@ async function runConversation(user, text, out = {}) {
     {
       type: 'text',
       text: parts.dynamic + connectLinkBlock(user) + require('../services/googleConnection').promptBlock(user) + appStudy.knowledgeBlock(user) + rulesBlock(user)
-        + pendingActionsBlock(user) + recentImagesBlock(user) + recentToolContextBlock(user),
+        + require('../services/meetingFollowup').promptBlock(user) + require('../services/replyDrafter').promptBlock(user) + pendingActionsBlock(user) + recentImagesBlock(user) + recentToolContextBlock(user),
     },
   ];
   const ctx = { toolLog: [] };
@@ -243,6 +245,10 @@ async function runConversation(user, text, out = {}) {
     require('../services/behaviorLearner')
       .learnForUser(user.id)
       .catch((e) => console.warn('[behaviorLearner]', e.message));
+    // Learn how they write (first time as soon as there's enough, then refresh).
+    require('../services/styleProfile')
+      .maybeBuild(require('../db/users').getById(user.id) || user)
+      .catch((e) => console.warn('[styleProfile]', e.message));
   } catch (_) {
     // non-fatal
   }
@@ -257,7 +263,7 @@ async function runConversation(user, text, out = {}) {
  * the AI decided nothing needed sending.
  */
 async function runAutomatedInstruction(user, instruction) {
-  const system = buildSystemPrompt(user) +
+  const system = buildSystemPrompt(user) + rulesBlock(user) +
     `\n\n--- AUTOMATED RUN ---\nThis is a scheduled standing instruction you set up earlier, firing now — the user did NOT just message you. Carry it out with your tools and reply with ONLY the message to send them: the result itself (e.g. the traffic update), briefly and naturally, as if you proactively reached out. Do not ask questions or say "let me know" — just do it. If for some reason it genuinely cannot be done right now, reply with a short honest note about that instead.`;
 
   const messages = [{ role: 'user', content: `[Scheduled instruction firing now] ${instruction}` }];
@@ -337,6 +343,8 @@ function builtinToolList() {
     ...imageToolsAvailable(),
     ...brainTools,
     ...recordsTools,
+    ...followupTools,
+    ...replyTools,
   ];
 }
 
@@ -391,6 +399,10 @@ async function runToolLoop(user, messages, system, maxRounds = 5, ctx = {}) {
           result = await executeBrainTool(user, { name: block.name, input: block.input }, ctx);
         } else if (recordsToolNames.has(block.name)) {
           result = await executeRecordsTool(user, { name: block.name, input: block.input });
+        } else if (replyToolNames.has(block.name)) {
+          result = await executeReplyTool(user, { name: block.name, input: block.input }, ctx);
+        } else if (followupToolNames.has(block.name)) {
+          result = await executeFollowupTool(user, { name: block.name, input: block.input }, ctx);
         } else if (taskToolNames.has(block.name)) {
           result = await executeTaskTool(user, { name: block.name, input: block.input });
         } else if (goalToolNames.has(block.name)) {

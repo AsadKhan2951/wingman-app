@@ -73,14 +73,22 @@ function clip(v, n) {
   return t.length > n ? `${t.slice(0, n)}…` : t;
 }
 
-function builtinPreview(slug, a = {}) {
+function builtinPreview(slug, a = {}, userId = null) {
   switch (slug) {
     case 'send_email':
     case 'send_business_email':
       return `Send email to ${a.to || '?'} — "${clip(a.subject || '(no subject)', 80)}": ${clip(a.body, 300)}`;
     case 'reply_to_email':
-    case 'reply_business_email':
-      return `Reply to email ${a.email_id || a.uid || a.id || ''}: ${clip(a.body, 300)}`.replace(/ +:/, ':');
+    case 'reply_business_email': {
+      // Name the person, not a message id ("Reply to Ali Raza: …").
+      let who = '';
+      try {
+        const gid = slug === 'reply_business_email' ? `webmail:${a.uid}` : String(a.email_id || a.id || '');
+        const r = userId ? require('../db').db.prepare('SELECT sender FROM email_items WHERE user_id = ? AND gmail_id = ? LIMIT 1').get(userId, gid) : null;
+        if (r && r.sender) who = String(r.sender).replace(/\s*<.*>/, '').replace(/"/g, '').trim();
+      } catch (_) { /* fall back to the id */ }
+      return `Reply to ${who || `email ${a.email_id || a.uid || a.id || ''}`}: ${clip(a.body, 300)}`.replace(/ +:/, ':');
+    }
     case 'forward_email':
       return `Forward email ${a.email_id || ''} to ${a.to || '?'}${a.note ? ` with note: ${clip(a.note, 200)}` : ''}`;
     case 'delete_event':
@@ -98,8 +106,8 @@ function builtinPreview(slug, a = {}) {
   }
 }
 
-function preview(toolkit, slug, args) {
-  if (toolkit === BUILTIN) return builtinPreview(slug, args);
+function preview(toolkit, slug, args, userId = null) {
+  if (toolkit === BUILTIN) return builtinPreview(slug, args, userId);
   let a = '';
   try { a = JSON.stringify(args || {}); } catch (_) { a = '{}'; }
   if (a.length > 400) a = a.slice(0, 400) + '…';
@@ -123,7 +131,7 @@ async function propose(user, { toolkit, slug, version, args }, ctx = {}) {
       instruction: 'This exact action is already waiting for the user\'s yes. Show it once and wait for their reply.',
     };
   }
-  const summary = preview(toolkit, slug, args);
+  const summary = preview(toolkit, slug, args, user.id);
   const row = actions.create({ userId: user.id, toolkit, toolSlug: slug, toolVersion: version, args, summary });
   return {
     approval_required: true,
@@ -188,7 +196,10 @@ async function approve(user, actionId, ctx = {}) {
   actions.finish(user.id, row.id, { ok: res.ok, result: res.ok ? res.data : res.error });
   if (res.ok) {
     agentActions.log(user.id, { kind: `integration.${row.tool_slug}`, summary: row.summary, source: 'chat' });
-    return { done: true, app: appLabel(row.toolkit), result: res.data };
+    // Earned autonomy: after enough yeses for the same kind, offer to stop asking.
+    let offer = null;
+    try { offer = require('../services/autonomy').afterApproval(user, { ...row, result: res.data }); } catch (_) { /* optional */ }
+    return { done: true, app: appLabel(row.toolkit), result: res.data, ...(offer ? { autonomy_offer: offer } : {}) };
   }
   return { error: 'ACTION_FAILED', app: appLabel(row.toolkit), detail: res.error };
 }
@@ -280,6 +291,23 @@ async function executeIntegrationTool(user, toolUse, ctx = {}) {
  * an automated run.
  */
 async function gateBuiltin(user, name, input, ctx = {}, runNow) {
+  // The user earned-autonomy'd this exact kind ("replies to Ali") — run it now.
+  // Live chat only: an automated run never skips the yes.
+  if (!ctx.automated && !ALWAYS_CONFIRM.has(name)) {
+    let granted = false;
+    try { granted = require('../services/autonomy').isGranted(user.id, BUILTIN, name, input || {}); } catch (_) { /* no */ }
+    if (granted) {
+      const out = await runNow();
+      if (out && !out.error) {
+        const row = actions.create({ userId: user.id, toolkit: BUILTIN, toolSlug: name, args: input || {}, summary: `(without asking) ${builtinPreview(name, input || {}, user.id)}` });
+        actions.claim(user.id, row.id);
+        actions.finish(user.id, row.id, { ok: true, result: out });
+        agentActions.log(user.id, { kind: `integration.${name}`, summary: row.summary, source: 'auto' });
+        return { ...out, auto_approved: true, note: 'Done without asking because the user allowed this kind of action. Tell them briefly what you did.' };
+      }
+      return out;
+    }
+  }
   if (!config.composio.enabled && !ALWAYS_CONFIRM.has(name)) {
     if (ctx.automated) return { error: 'NEEDS_USER_CONFIRMATION', detail: 'Automated runs cannot send or delete. Tell the user what you would do and let them confirm.' };
     return runNow();
@@ -334,5 +362,5 @@ function pendingActionsBlock(user) {
 
 module.exports = {
   executeIntegrationTool, pendingActionsBlock, proposeAutoApproveRule,
-  gateBuiltin, setBuiltinRunner, BUILTIN_GATED,
+  gateBuiltin, setBuiltinRunner, BUILTIN_GATED, canEverAutoApprove,
 };

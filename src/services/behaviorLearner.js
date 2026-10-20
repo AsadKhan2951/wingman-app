@@ -14,10 +14,13 @@ const memoryRepo = require('../db/userMemory');
  * Deliberately conservative: only facts that will still be true next week.
  */
 
-const SYSTEM = `You extract DURABLE facts about a user from their chat with an AI assistant.
+const SYSTEM = `You extract DURABLE facts about a user from their chat with an AI assistant, plus any CORRECTIONS they gave the assistant about how it should behave.
 
-Reply with ONLY a compact JSON array, no prose, no code fences:
-[{"fact": string, "category": "preference"|"habit"|"relationship"|"project"|"context"}]
+Reply with ONLY compact JSON, no prose, no code fences:
+{"facts": [{"fact": string, "category": "preference"|"habit"|"relationship"|"project"|"context"}],
+ "rules": [string]}
+
+"rules" = standing instructions for the ASSISTANT that the user gave or clearly implied by correcting it: tone, length, language, format, wording, what to stop/start doing ("your replies are too long" → "Keep replies short — 2-3 lines"; "emoji mat lagao" → "Don't use emojis"; "mujhe sir mat kaho" → "Never call the user sir"; "why are you asking again, just do it" → "Don't re-ask for confirmation on small things"). Only when the USER said it — never from the assistant's own lines. Each rule a short imperative in English. Skip rules already in KNOWN RULES.
 
 What counts as durable — things still true next week:
 - preference: how they like things done ("prefers short replies", "likes meetings after 2pm")
@@ -29,10 +32,27 @@ What counts as durable — things still true next week:
 Do NOT extract:
 - One-off requests, or anything about a single meeting/email/task
 - Anything already in the KNOWN list (or a reworded version of it)
-- Temporary state ("is busy today"), or the assistant's own behaviour
+- Temporary state ("is busy today")
 - Guesses. If the conversation doesn't clearly show it, leave it out.
 
-Write each fact as a short third-person statement. Return [] when there is nothing durable — that is the normal, expected result for most conversations.`;
+Write each fact as a short third-person statement. Return {"facts":[],"rules":[]} when there is nothing durable — that is the normal, expected result for most conversations.`;
+
+/** Parse {facts, rules} (or a bare facts array, from older prompts). */
+function parseLearned(raw) {
+  const text = String(raw || '').replace(/```json|```/g, '').trim();
+  const s = text.indexOf('{');
+  const a = text.indexOf('[');
+  if (s !== -1 && (a === -1 || s < a)) {
+    try {
+      const o = JSON.parse(text.slice(s, text.lastIndexOf('}') + 1));
+      return {
+        facts: Array.isArray(o.facts) ? o.facts : [],
+        rules: Array.isArray(o.rules) ? o.rules.filter((r) => typeof r === 'string' && r.trim()) : [],
+      };
+    } catch (_) { /* fall through */ }
+  }
+  return { facts: parseFacts(raw), rules: [] };
+}
 
 /** Strip code fences / prose and parse the JSON array. */
 function parseFacts(raw) {
@@ -80,6 +100,8 @@ async function learnForUser(userId, { messages = 40, persist = true } = {}) {
   }
 
   const known = memoryRepo.listForUser(userId).map((m) => `- ${m.fact}`).join('\n') || '(nothing yet)';
+  const rulesRepo = require('../db/userRules');
+  const knownRules = rulesRepo.listForUser(userId).filter((r) => r.kind === 'behavior').map((r) => `- ${r.text}`).join('\n') || '(none)';
   const transcript = history
     .map((m) => `${m.role === 'assistant' ? 'Wingman' : 'User'}: ${(m.content || '').slice(0, 400)}`)
     .join('\n');
@@ -87,7 +109,7 @@ async function learnForUser(userId, { messages = 40, persist = true } = {}) {
   let raw;
   try {
     raw = await claude.chat(
-      [{ role: 'user', content: `KNOWN FACTS:\n${known}\n\nCONVERSATION:\n${transcript}` }],
+      [{ role: 'user', content: `KNOWN FACTS:\n${known}\n\nKNOWN RULES:\n${knownRules}\n\nCONVERSATION:\n${transcript}` }],
       { system: SYSTEM, maxTokens: 700, model: require('../config').anthropic.modelCheap },
     );
   } catch (err) {
@@ -95,8 +117,15 @@ async function learnForUser(userId, { messages = 40, persist = true } = {}) {
     return { learned: [], error: err.message };
   }
 
-  const facts = parseFacts(claude.textOf ? (typeof raw === 'string' ? raw : claude.textOf(raw)) : raw);
+  const parsed = parseLearned(claude.textOf ? (typeof raw === 'string' ? raw : claude.textOf(raw)) : raw);
+  const facts = parsed.facts;
   const learned = [];
+  const rulesLearned = [];
+  for (const text of parsed.rules.slice(0, 4)) {
+    if (!persist) { rulesLearned.push(text.trim()); continue; }
+    const r = rulesRepo.add(userId, { kind: 'behavior', text: text.trim() });
+    if (r.added) rulesLearned.push(text.trim());
+  }
   for (const f of facts.slice(0, 8)) {
     if (!f || typeof f.fact !== 'string') continue;
     const category = VALID_CATEGORIES.has(f.category) ? f.category : 'context';
@@ -108,10 +137,10 @@ async function learnForUser(userId, { messages = 40, persist = true } = {}) {
   if (persist) {
     usersRepo.updatePreferences(userId, { lastLearnedMessageCount: totalNow });
   }
-  if (learned.length) {
-    console.log(`[behaviorLearner] learned ${learned.length} new fact(s) about ${user.phone}`);
+  if (learned.length || rulesLearned.length) {
+    console.log(`[behaviorLearner] learned ${learned.length} fact(s), ${rulesLearned.length} rule(s) for ${user.phone}`);
   }
-  return { learned };
+  return { learned, rules: rulesLearned };
 }
 
 /** Run the learner for every onboarded user (called from the scheduler). */
@@ -129,4 +158,4 @@ async function runAllUsers() {
   return results;
 }
 
-module.exports = { learnForUser, runAllUsers, parseFacts };
+module.exports = { learnForUser, runAllUsers, parseFacts, parseLearned };

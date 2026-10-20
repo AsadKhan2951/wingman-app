@@ -66,6 +66,12 @@ function format(user, agg) {
   lines.push(`\ud83d\udcc5 Meetings attended: ${agg.meetingsAttended}`);
   lines.push('');
 
+  // Chief of staff: what Wingman did today, what's waiting on them, who owes them.
+  try {
+    const report = require('./chiefOfStaff').eveningReport(user);
+    if (report) { lines.push(report); lines.push(''); }
+  } catch (_) { /* the wrap still goes out */ }
+
   // Still pending
   const pending = [];
   for (const task of agg.incomplete.slice(0, 5)) pending.push(task.title);
