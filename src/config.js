@@ -377,6 +377,14 @@ const config = {
     keepDays: parseInt(process.env.MEDIA_KEEP_DAYS, 10) || 60,
   },
 
+  // Cloudflare Worker that delivers business-mailbox mail through the user's
+  // OWN SMTP server (DigitalOcean blocks SMTP ports on the droplet). See
+  // relay/smtp-relay-worker.js. Off unless both are set.
+  smtpRelay: {
+    url: process.env.SMTP_RELAY_URL || '',
+    secret: process.env.SMTP_RELAY_SECRET || '',
+  },
+
   // Brevo transactional email API, used for sending business-mailbox replies
   // because Railway blocks outbound SMTP. Reading still uses IMAP directly.
   brevo: {

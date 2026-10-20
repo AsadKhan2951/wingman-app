@@ -391,3 +391,11 @@ cd app && npm run build        # build the PRIMARY app/ UI
 # local prod-ish preview, no WhatsApp:
 NODE_ENV=production DISABLE_WHATSAPP=1 ADMIN_PASSWORD=demo npm start
 ```
+
+
+## Business mail sending (SMTP relay)
+- DigitalOcean blocks outbound SMTP (25/465/587) from the droplet, so business-mail replies can't reach the user's own SMTP server directly.
+- `relay/smtp-relay-worker.js` is a Cloudflare Worker (Wingman's Cloudflare account, wingman01.app@gmail.com) that logs in to the user's SMTP server over 465/587 and delivers the message. Nothing is stored there.
+- `src/services/smtpRelay.js` + `webmail.send`: compose the RFC 822 message (threaded), POST it to the relay, then IMAP-append a copy to the user's Sent folder. Brevo is only a fallback for connection failures.
+- Env: `SMTP_RELAY_URL`, `SMTP_RELAY_SECRET` (= Worker secret `RELAY_SECRET`). Test: `node scripts/test-smtp-relay.js`.
+- Gmail sends/replies use the Gmail API (HTTPS), not SMTP.

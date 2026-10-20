@@ -128,6 +128,20 @@ async function testConnection({ address, password, imapHost, imapPort, smtpHost,
   // SMTP, and refusing the whole connection over that left users unable even to
   // READ their customer mail — which works perfectly well over IMAP. So we
   // report whether sending is available and let the caller decide what to say.
+  // Sending goes through the user's OWN SMTP server via the relay (the droplet
+  // itself can't reach SMTP ports). Check that login now, so a wrong SMTP
+  // password shows up at setup instead of on the first reply.
+  const relay = require('./smtpRelay');
+  if (relay.enabled() && s.smtpHost) {
+    try {
+      await relay.verify(s);
+      return { ok: true, canSend: true, via: 'relay' };
+    } catch (err) {
+      const code = relay.classify(err) || friendlyError(err);
+      console.warn('[webmail] relay verify failed:', String(err.message).slice(0, 200));
+      if (!config.brevo.enabled) return { ok: true, canSend: false, sendError: code };
+    }
+  }
   if (config.brevo.enabled) return { ok: true, canSend: true, via: 'brevo' };
 
   try {
@@ -305,9 +319,67 @@ async function replyMessage(user, uid, bodyText) {
   return { ...r, to: orig.fromAddress, subject, repliedTo: orig.from };
 }
 
+/** Build the finished message (headers + body) exactly as it will be sent. */
+async function compose(s, { to, subject, body, replyTo }) {
+  const MailComposer = require('nodemailer/lib/mail-composer');
+  const domain = String(s.address).split('@')[1] || 'wingman.local';
+  const messageId = `<${Date.now().toString(36)}.${require('crypto').randomBytes(6).toString('hex')}@${domain}>`;
+  const raw = await new MailComposer({
+    from: s.fromName ? { name: s.fromName, address: s.address } : s.address,
+    to,
+    subject: subject || '(no subject)',
+    text: body || '',
+    messageId,
+    date: new Date(),
+    inReplyTo: replyTo || undefined,
+    references: replyTo || undefined,
+  }).compile().build();
+  return { raw: raw.toString('utf8'), messageId };
+}
+
+/** Put a copy of a sent message in the mailbox's Sent folder (best effort). */
+async function saveToSent(s, raw) {
+  const client = imapClient(s);
+  try {
+    await client.connect();
+    const boxes = await client.list();
+    const sent = boxes.find((b) => b.specialUse === '\\Sent')
+      || boxes.find((b) => /^(inbox[./])?sent( items| messages| mail)?$/i.test(b.path));
+    await client.append(sent ? sent.path : 'Sent', raw, ['\\Seen']);
+    return true;
+  } catch (err) {
+    console.warn('[webmail] could not save to Sent:', err.message);
+    return false;
+  } finally {
+    try { await client.logout(); } catch (_) { /* closed */ }
+  }
+}
+
 /** Send a message from the user's business address. */
 async function send(user, { to, subject, body, replyTo } = {}) {
   const s = settingsFor(user);
+
+  // 1) Through the user's OWN mail server, via the relay — the mail truly comes
+  //    from their mailbox and lands in their Sent folder.
+  const relay = require('./smtpRelay');
+  if (relay.enabled() && s.smtpHost) {
+    const { raw, messageId } = await compose(s, { to, subject, body, replyTo });
+    try {
+      await relay.deliver(s, { from: s.address, to, raw });
+      await saveToSent(s, raw);
+      return { messageId, from: s.address, via: 'relay' };
+    } catch (err) {
+      const code = relay.classify(err) || 'WEBMAIL_SEND_FAILED';
+      console.warn('[webmail] relay send failed:', String(err.message).slice(0, 300));
+      // Wrong password or a rejected recipient won't be fixed by another route.
+      if (code === 'WEBMAIL_AUTH_FAILED' || code === 'WEBMAIL_RECIPIENT_REJECTED' || !config.brevo.enabled) {
+        const e = new Error(code);
+        e.detail = String(err.message).replace(/^RELAY:/, '').slice(0, 200);
+        throw e;
+      }
+      // else fall through to Brevo (works when this domain is verified there)
+    }
+  }
 
   // Prefer Brevo's HTTP API — Railway blocks outbound SMTP, so the mailbox's
   // own SMTP server is unreachable from here. The From stays the business
@@ -339,5 +411,5 @@ async function send(user, { to, subject, body, replyTo } = {}) {
 
 module.exports = {
   detectSettings, testConnection, saveForUser, disconnect, isConnected,
-  listRecent, readMessage, readBodies, replyMessage, send, settingsFor,
+  listRecent, readMessage, readBodies, replyMessage, send, settingsFor, compose,
 };

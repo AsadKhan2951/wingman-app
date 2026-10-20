@@ -1181,7 +1181,9 @@ router.post('/webmail/connect', async (req, res) => {
     // Said plainly so nobody discovers mid-reply that sending was never possible.
     send_note: capability.canSend
       ? null
-      : 'Reading works. Sending is blocked by this server\'s host, so replies cannot go out from this address yet.',
+      : capability.sendError === 'WEBMAIL_AUTH_FAILED'
+        ? 'Reading works, but the outgoing (SMTP) login was rejected — check the SMTP host and port, or use an app password, so replies can go out.'
+        : 'Reading works, but the outgoing (SMTP) server could not be reached — check the SMTP host and port so replies can go out.',
   });
 });
 

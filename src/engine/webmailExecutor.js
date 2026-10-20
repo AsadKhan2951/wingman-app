@@ -67,7 +67,7 @@ async function executeWebmailTool(user, toolUse) {
   } catch (err) {
     const msg = (err && err.message) || 'webmail_operation_failed';
     if (msg === 'WEBMAIL_AUTH_FAILED') {
-      return { error: 'WEBMAIL_AUTH_FAILED', detail: 'The mailbox password was rejected — the user should reconnect it in Settings.' };
+      return { error: 'WEBMAIL_AUTH_FAILED', detail: `${/send|reply/.test(name) ? 'The email was NOT sent. ' : ''}The mailbox password was rejected — the user should reconnect the business email in the app (More → Connectors → Business email).` };
     }
     if (msg === 'WEBMAIL_CREDENTIALS_UNREADABLE') {
       return { error: 'WEBMAIL_AUTH_FAILED', detail: 'Stored mail credentials could not be read — the user should reconnect the mailbox.' };
@@ -78,10 +78,10 @@ async function executeWebmailTool(user, toolUse) {
     if (msg === 'WEBMAIL_HOST_NOT_FOUND' || msg === 'WEBMAIL_CONNECTION_FAILED') {
       // Reading and sending fail differently here: IMAP works from this host,
       // outbound SMTP is blocked by it. Saying which one matters.
-      if (name === 'send_business_email') {
+      if (name === 'send_business_email' || name === 'reply_business_email') {
         return {
           error: 'WEBMAIL_SEND_BLOCKED',
-          detail: 'The email was NOT sent. This server cannot reach the outgoing mail server — reading the inbox still works, but replies from this address are not possible yet.',
+          detail: 'The email was NOT sent. The outgoing (SMTP) mail server could not be reached — reading the inbox still works. The SMTP host/port in Business email settings may be wrong.',
         };
       }
       return { error: 'WEBMAIL_UNREACHABLE', detail: 'The mail server did not respond.' };
@@ -93,7 +93,10 @@ async function executeWebmailTool(user, toolUse) {
       return { error: 'WEBMAIL_SEND_FAILED', detail: 'The email sending service rejected the API key — the email was NOT sent. It needs reconnecting.' };
     }
     if (msg === 'WEBMAIL_SEND_FAILED') {
-      return { error: 'WEBMAIL_SEND_FAILED', detail: 'The email could not be sent just now — nothing went out.' };
+      return { error: 'WEBMAIL_SEND_FAILED', detail: `The email was NOT sent — nothing went out.${err.detail ? ` Mail server said: ${err.detail}` : ''} Tell the user plainly.` };
+    }
+    if (msg === 'WEBMAIL_RECIPIENT_REJECTED') {
+      return { error: 'WEBMAIL_RECIPIENT_REJECTED', detail: `The email was NOT sent — the mail server refused the recipient address.${err.detail ? ` (${err.detail})` : ''}` };
     }
     return { error: msg };
   }
