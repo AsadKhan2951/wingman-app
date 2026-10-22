@@ -90,6 +90,12 @@ async function complete(user, { query = '', taskId = null, all = false } = {}) {
     }
   }
   if (all) group = matches;
+  // Duplicates of the chosen task (same title — e.g. the Google Tasks copy) close with it.
+  if (taskId) {
+    const same = tasksRepo.listForUser(user.id, { includeCompleted: false, limit: 500 })
+      .filter((t) => t.id !== top.id && norm(t.title) === norm(top.title));
+    group = [top, ...same];
+  }
 
   const done = [];
   let synced = true;

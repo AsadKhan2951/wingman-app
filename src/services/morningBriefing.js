@@ -272,6 +272,7 @@ async function sendForUser(userId, { now = new Date(), send = true, full = false
   const user = usersRepo.getById(userId);
   if (!user) return { text: '', sent: false, skipped: 'no_user' };
 
+  try { if (send) await require('./doneGuard').reconcile(user); } catch (_) { /* best-effort */ }
   const agg = await aggregate(user, now);
 
   // The AI health read is computed here (not in aggregate) so only real morning

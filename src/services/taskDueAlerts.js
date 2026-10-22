@@ -76,6 +76,8 @@ async function alertForUser(userId, { now = new Date(), send = true, windowMin =
   if (!proactiveGate.allows(user, 'taskdue')) return { sent: [], skipped: 'gated' };
 
   const already = reminderState(user);
+  // Never remind about something they already said is done.
+  try { if (send) await require('./doneGuard').reconcile(user); } catch (_) { /* best-effort */ }
   const dueSoon = dueSoonTasks(user, now, windowMin);
   const sent = [];
 

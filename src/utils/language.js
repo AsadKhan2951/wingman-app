@@ -74,6 +74,30 @@ function userLanguage(user) {
   return 'english';
 }
 
+/**
+ * The language to write in, as a label a model understands — works for ANY
+ * language: the learned style profile ("German", "Spanish mixed with English"…)
+ * wins; otherwise the detected code; a writer in some other script gets
+ * "the same language as their messages" with a sample.
+ */
+function languageLabel(user) {
+  if (!user) return 'English';
+  const sp = user.preferences && user.preferences.styleProfile && user.preferences.styleProfile.chat;
+  const learned = String((sp && sp.language) || '').trim();
+  if (learned) return learned.slice(0, 80);
+  const code = userLanguage(user);
+  if (code !== 'english') return languageName(code);
+  try {
+    const rows = db.prepare("SELECT content FROM conversations WHERE user_id = ? AND role = 'user' AND content IS NOT NULL ORDER BY created_at DESC LIMIT 20").all(user.id)
+      .map((r) => String(r.content || '').trim()).filter((t) => t.length >= 3 && !/^\[/.test(t));
+    const foreign = rows.filter((t) => (t.match(/[^\u0000-ɏ\s\d\p{P}\p{S}]/gu) || []).length / t.length > 0.3);
+    if (rows.length >= 3 && foreign.length / rows.length >= 0.3) {
+      return `the same language as their own messages, e.g. "${foreign[0].slice(0, 60)}"`;
+    }
+  } catch (_) { /* fall through */ }
+  return 'English';
+}
+
 function languageName(code) {
   switch (code) {
     case 'roman_urdu': return 'Roman Urdu (Urdu written in English letters, naturally mixed with English words)';
@@ -83,4 +107,4 @@ function languageName(code) {
   }
 }
 
-module.exports = { userLanguage, languageName, looksRomanUrdu };
+module.exports = { userLanguage, languageName, languageLabel, looksRomanUrdu };

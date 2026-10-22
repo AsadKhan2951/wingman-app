@@ -94,6 +94,80 @@ const isOpen = (id) => tasks.getById(id).completed === 0;
   check('…and their Roman Urdu plan is left as is', keep.plan[0].step === 'Aaj gym jao');
   check('detector: English with "he" is not Urdu', !L.looksRomanUrdu('he said he will send the report by friday'));
 
+  // ── 3. Guards in code (the chat model can't skip them; any language) ─
+  const guard = require('../src/services/doneGuard');
+  const conv = require('../src/engine/conversation');
+  const emb = tasks.create({ userId: u.id, title: 'EMB curves more bug fixing', dueDate: new Date().toISOString() });
+  const brand = tasks.create({ userId: u.id, title: 'Find a brand name for friend', dueDate: new Date().toISOString() });
+  automations.create(u.id, { instruction: 'Remind the user about EMB curves more bug fixing', time: '13:45', kind: 'once', timezone: 'Asia/Karachi' });
+
+  // A stand-in for the small judge model: it is given the open tasks (with ids),
+  // the user's message and the reply. Here it "understands" a few phrasings in
+  // different languages — the real judge is a model, not a word list.
+  let judgeCalls = [];
+  const understands = { 'emb wala kaam ho gaya': 'EMB', 'emb fehlerbehebung erledigt': 'EMB', 'emb curves bug fixing done': 'EMB', 'brand ka naam mil gaya, ho gaya': 'brand', 'brand name for friend done': 'brand' };
+  guard._setModel(async (prompt) => {
+    judgeCalls.push(prompt);
+    if (/^Write this WhatsApp message in/.test(prompt)) return 'Find 2-3 nearby gyms today.';
+    const msg = ((prompt.match(/USER'S MESSAGE:\n([^\n]*)/) || [])[1] || (prompt.match(/\| ([^|\n]*)$/m) || [])[1] || '').toLowerCase().trim();
+    const key = understands[msg] || Object.entries(understands).find(([k]) => prompt.toLowerCase().includes(`| ${k}`))?.[1];
+    const ids = [];
+    if (key) for (const line of prompt.split('\n')) { const m = line.match(/^- ([0-9a-f-]{8,}) \| ([^|\n]+)/i); if (m && m[2].includes(key)) ids.push(m[1]); }
+    const reply = (prompt.match(/ASSISTANT'S REPLY:\n([\s\S]*?)\n\nThe user writes in/) || [])[1] || '';
+    return JSON.stringify({ done_ids: [...ids, 'not-a-real-id'], reply_claims_done: /marked done/i.test(reply), reply_language_ok: true });
+  });
+
+  const realChat = claude.chatWithTools;
+  const say = (t) => { claude.chatWithTools = async () => ({ stop_reason: 'end_turn', content: [{ type: 'text', text: t }] }); };
+  say('Nice, marked done ✅ — EMB curves bug fixing complete.');
+  const said = await conv.runConversation(users.getById(u.id), 'EMB wala kaam ho gaya');
+  check('Roman Urdu "ho gaya" + model skipped the tool → code closes the task anyway', !isOpen(emb.id) && /marked done/.test(said), said);
+  check('…its reminder is off, the other task untouched, made-up ids ignored', isOpen(brand.id) && !db.prepare("SELECT 1 FROM automations WHERE user_id = ? AND active = 1 AND instruction LIKE '%EMB%'").get(u.id));
+
+  const emb2 = tasks.create({ userId: u.id, title: 'EMB curves more bug fixing' });
+  say('Super!');
+  const de = await conv.runConversation(users.getById(u.id), 'EMB Fehlerbehebung erledigt');
+  check('German "erledigt" → closed too (judge, not a word list); reply notes it', !isOpen(emb2.id) && /✅ EMB curves more bug fixing/.test(de), de);
+
+  say('Marked done ✅');
+  const lie = await conv.runConversation(users.getById(u.id), 'renew passport done');
+  check('false "marked done" for a task that does not exist is never sent', !/Marked done ✅/.test(lie) && /Which one should I mark done/.test(lie) && /Find a brand name/.test(lie), lie);
+
+  // Judge down → keyword fallback still protects.
+  guard._setModel(async () => { throw new Error('API down'); });
+  const emb3 = tasks.create({ userId: u.id, title: 'EMB curves more bug fixing' });
+  say('Nice, marked done ✅');
+  await conv.runConversation(users.getById(u.id), 'Emb curves bug fixing done');
+  check('judge unavailable → fallback still closes "Emb curves bug fixing done"', !isOpen(emb3.id));
+  const notes = tasks.create({ userId: u.id, title: 'Send notes to Ali' });
+  say('Sure, sending the notes.');
+  await conv.runConversation(users.getById(u.id), 'meeting done, send notes');
+  check('…and does NOT close "Send notes to Ali" on "meeting done, send notes"', isOpen(notes.id));
+  claude.chatWithTools = realChat;
+
+  // Before reminders: messages since the last check are judged once.
+  guard._setModel(async (prompt) => {
+    judgeCalls.push(prompt);
+    const ids = [];
+    if (/brand ka naam mil gaya, ho gaya/.test(prompt)) for (const line of prompt.split('\n')) { const m = line.match(/^- ([0-9a-f-]{8,}) \| Find a brand name/); if (m) ids.push(m[1]); }
+    return JSON.stringify({ done_ids: ids });
+  });
+  const late = tasks.create({ userId: u.id, title: 'Find a brand name for friend' });
+  db.prepare("UPDATE tasks SET created_at = datetime('now', '-1 hour') WHERE id IN (?, ?)").run(brand.id, late.id);
+  convos.logMessage({ userId: u.id, role: 'user', content: 'brand ka naam mil gaya, ho gaya' });
+  judgeCalls = [];
+  const rec = await guard.reconcile(users.getById(u.id));
+  check('before reminders/briefing/nudges: tasks they already said are done get closed (+ duplicate)', rec.length >= 2 && !isOpen(brand.id) && !isOpen(late.id), JSON.stringify(rec));
+  judgeCalls = [];
+  await guard.reconcile(users.getById(u.id));
+  check('…no new messages → no extra model call', judgeCalls.length === 0);
+
+  guard._setModel(async () => 'Find 2-3 nearby gyms today.');
+  check('English writer: a Roman-Urdu message is rewritten before sending', (await guard.fixLanguage(users.getById(u.id), 'Aaj hi 2-3 nazdeeki gyms ka pata karo')) === 'Find 2-3 nearby gyms today.');
+  check('…plain English is left alone (no model call)', (await guard.fixLanguage(users.getById(u.id), 'Your meeting is at 3')) === 'Your meeting is at 3');
+  users.updatePreferences(u.id, { styleProfile: { chat: { language: 'German' } } });
+  check('any language: the target comes from how they write ("German")', L.languageLabel(users.getById(u.id)) === 'German');
+
   console.log(fails ? `\n${fails} FAILED` : '\nall passed');
   process.exit(fails ? 1 : 0);
 })().catch((e) => { console.error(e); process.exit(1); });

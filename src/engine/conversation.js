@@ -238,7 +238,13 @@ async function runConversation(user, text, out = {}) {
     },
   ];
   const ctx = { toolLog: [] };
-  const reply = await runToolLoop(user, messages, system, CHAT_MAX_ROUNDS, ctx);
+  let reply = await runToolLoop(user, messages, system, CHAT_MAX_ROUNDS, ctx);
+  // Enforced in code, not trusted to the model: "done" really closes the task,
+  // a false "marked done" is never sent, and English writers get English.
+  try {
+    const guard = require('../services/doneGuard');
+    reply = await guard.afterReply(user, text, reply, ctx);
+  } catch (e) { console.warn('[doneGuard]', e.message); }
   out.toolLog = ctx.toolLog;
 
   try {
@@ -405,8 +411,10 @@ async function runToolLoop(user, messages, system, maxRounds = 5, ctx = {}) {
           result = await executeFollowupTool(user, { name: block.name, input: block.input }, ctx);
         } else if (taskToolNames.has(block.name)) {
           result = await executeTaskTool(user, { name: block.name, input: block.input });
+          if (result && result.completed === true) ctx.closedSomething = true;
         } else if (goalToolNames.has(block.name)) {
           result = await executeGoalTool(user, { name: block.name, input: block.input });
+          if (result && Array.isArray(result.steps_marked_done) && result.steps_marked_done.length) ctx.closedSomething = true;
         } else if (auditToolNames.has(block.name)) {
           result = await executeAuditTool(user, { name: block.name, input: block.input });
         } else if (vaultToolNames.has(block.name)) {
