@@ -10,7 +10,7 @@ const claude = require('../llm/claude');
 
 const SYSTEM = `You are a practical goal coach. Given a user's goal, break it into a SHORT, concrete action plan (3-6 ordered steps) they can actually follow, plus 1-2 proactive ideas of things YOU (their assistant) could do to help move it forward.
 Return ONLY JSON: {"steps": ["step 1", "step 2", ...], "ideas": ["idea 1", ...]}.
-Rules: steps are short imperative actions, realistic, ordered, no fluff. ideas are things the assistant can DO (e.g. "remind you every Monday morning", "find local classes and prices"). Keep everything tight and useful. Respond in the user's language if the goal is written in Roman Urdu/Urdu.`;
+Rules: steps are short imperative actions, realistic, ordered, no fluff. ideas are things the assistant can DO (e.g. "remind you every Monday morning", "find local classes and prices"). Keep everything tight and useful. Write EVERY step and idea in the language named on the "Write in:" line — never switch language because of where the user lives.`;
 
 function extractJson(text) {
   if (!text) return null;
@@ -25,8 +25,9 @@ function extractJson(text) {
 
 const strArr = (x) => (Array.isArray(x) ? x.map((v) => String(v || '').trim()).filter(Boolean) : []);
 
-async function plan({ title, detail = '', targetDate = null } = {}) {
+async function plan({ title, detail = '', targetDate = null, language = 'English' } = {}) {
   const prompt = [
+    `Write in: ${language}`,
     `Goal: ${title}`,
     detail ? `Context: ${detail}` : null,
     targetDate ? `Target date: ${targetDate}` : null,

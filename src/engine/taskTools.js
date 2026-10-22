@@ -36,13 +36,17 @@ const taskTools = [
   {
     name: 'complete_task',
     description:
-      'Mark a task as completed. Use when the user says something is done or asks you to complete a task.',
+      'Mark a task as completed. Use when the user says something is done or asks you to complete a task. ' +
+      'It also closes duplicates of that task and switches off reminders for it. Only tell the user it is done ' +
+      'when the result has completed: true; on TASK_NOT_FOUND / MULTIPLE_MATCHES ask which task and call again with task_id.',
     input_schema: {
       type: 'object',
       properties: {
         query: { type: 'string', description: 'Task title or distinctive phrase to match.' },
+        task_id: { type: 'string', description: 'Exact task id (from a list or an earlier result) — use when you have it.' },
+        all: { type: 'boolean', description: 'True when they mean every task that matches ("all of them").' },
       },
-      required: ['query'],
+      required: [],
     },
   },
   {

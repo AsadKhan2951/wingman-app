@@ -13,7 +13,8 @@ function buildMessage(user, task) {
   const tz = user.timezone || 'Asia/Karachi';
   const at = task.due_date ? t.timeLabel(task.due_date, tz) : null;
   const title = task.title || 'Untitled task';
-  const lang = (user.language || 'en').toLowerCase();
+  const code = require('../utils/language').userLanguage(user);
+  const lang = code === 'arabic' ? 'ar' : (/urdu/.test(code) ? 'ur' : 'en');
 
   if (lang === 'ur') {
     return [

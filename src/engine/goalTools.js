@@ -32,12 +32,14 @@ const goalTools = [
     name: 'update_goal_progress',
     description:
       'Record progress on a goal — mark a plan step done, or set overall progress %. Use when the user ' +
-      'reports progress ("signed up for tennis", "saved 10k this month").',
+      'reports progress ("signed up for tennis", "saved 10k this month"), or replies "done" to a goal nudge ' +
+      '(then next_step_done: true). Only say it is done when steps_marked_done comes back non-empty.',
     input_schema: {
       type: 'object',
       properties: {
         goal: { type: 'string', description: 'Goal title or distinctive phrase to match.' },
         step: { type: 'string', description: 'A plan step they completed (text to match). Optional.' },
+        next_step_done: { type: 'boolean', description: 'True when they say "done" to the next step you nudged them about — marks the first unfinished step.' },
         progress: { type: 'number', description: 'Overall progress 0-100. Optional.' },
       },
       required: ['goal'],

@@ -23,9 +23,15 @@ async function runForUser(userId, { now = new Date() } = {}) {
   const goals = goalsRepo.listActive(user.id);
   let sent = 0;
 
-  for (const g of goals) {
+  const L = require('../utils/language');
+  const lang = L.userLanguage(user);
+
+  for (const gRaw of goals) {
     // Once per goal per local day.
-    if (g.last_nudge_at && String(g.last_nudge_at).slice(0, 10) === todayKey) continue;
+    if (gRaw.last_nudge_at && String(gRaw.last_nudge_at).slice(0, 10) === todayKey) continue;
+    // A plan written in the wrong language (older plans could come out in Roman
+    // Urdu for users who never write Urdu) is translated once and saved.
+    const g = await fixPlanLanguage(gRaw, lang);
     const next = (g.plan || []).find((s) => !s.done);
     if (!next) continue; // plan complete but goal not marked done — don't nag
 
@@ -40,6 +46,30 @@ async function runForUser(userId, { now = new Date() } = {}) {
     goalsRepo.update(g.id, { lastNudgeAt: now.toISOString() });
   }
   return { sent };
+}
+
+/** Translate a goal's plan into the user's language when it was written in another one. */
+async function fixPlanLanguage(goal, lang) {
+  const L = require('../utils/language');
+  const plan = goal.plan || [];
+  if (!plan.length || lang !== 'english') return goal;
+  if (!plan.some((s) => L.looksRomanUrdu(s.step))) return goal;
+  try {
+    const raw = await require('../llm/claude').complete(
+      `Translate each step to plain, natural English. Keep the meaning and order. Reply with ONLY a JSON array of strings, same length.
+
+${JSON.stringify(plan.map((s) => s.step))}`,
+      { maxTokens: 600, model: require('../config').anthropic.modelCheap },
+    );
+    const text = String(raw || '');
+    const arr = JSON.parse(text.slice(text.indexOf('['), text.lastIndexOf(']') + 1));
+    if (!Array.isArray(arr) || arr.length !== plan.length) return goal;
+    const fixed = plan.map((s, i) => ({ ...s, step: String(arr[i] || s.step).trim() || s.step }));
+    return goalsRepo.update(goal.id, { plan: fixed }) || { ...goal, plan: fixed };
+  } catch (err) {
+    console.warn('[goalCoach] plan translation failed:', err.message);
+    return goal;
+  }
 }
 
 async function runAllUsers({ now = new Date() } = {}) {
@@ -57,4 +87,4 @@ async function runAllUsers({ now = new Date() } = {}) {
   return out;
 }
 
-module.exports = { runForUser, runAllUsers };
+module.exports = { runForUser, runAllUsers, fixPlanLanguage };

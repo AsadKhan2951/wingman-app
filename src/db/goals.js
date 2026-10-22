@@ -86,6 +86,45 @@ function update(id, patch = {}) {
 }
 
 /** Mark a plan step done (by text match or index) and recompute progress %. */
+/**
+ * Mark plan steps done by text (forgiving: exact/substring, else most shared
+ * words) and/or the next unfinished step. Returns { goal, marked: [step text] }
+ * so callers never claim "done" when nothing matched.
+ */
+function markSteps(id, { text = null, next = false } = {}) {
+  const g = getById(id);
+  if (!g) return { goal: null, marked: [] };
+  const plan = g.plan || [];
+  const marked = [];
+  const words = (s) => String(s || '').toLowerCase().match(/[\p{L}\p{N}]{3,}/gu) || [];
+  if (text) {
+    const q = String(text).toLowerCase().trim();
+    let idx = plan.findIndex((s) => !s.done && (String(s.step).toLowerCase().includes(q) || q.includes(String(s.step).toLowerCase())));
+    if (idx === -1) {
+      const qw = new Set(words(q));
+      let best = -1;
+      let bestScore = 0;
+      plan.forEach((s, i) => {
+        if (s.done || !qw.size) return;
+        const sw = words(s.step);
+        const hit = sw.filter((w) => qw.has(w)).length;
+        const score = hit / Math.max(1, Math.min(sw.length, qw.size));
+        if (hit >= 2 && score > bestScore) { best = i; bestScore = score; }
+      });
+      if (bestScore >= 0.4) idx = best;
+    }
+    if (idx !== -1) { plan[idx].done = true; marked.push(plan[idx].step); }
+  }
+  if (next && !marked.length) {
+    const idx = plan.findIndex((s) => !s.done);
+    if (idx !== -1) { plan[idx].done = true; marked.push(plan[idx].step); }
+  }
+  if (!marked.length) return { goal: g, marked };
+  const total = plan.length || 1;
+  const doneCount = plan.filter((s) => s.done).length;
+  return { goal: update(id, { plan, progress: Math.round((doneCount / total) * 100) }), marked };
+}
+
 function setStepDone(id, stepMatch, done = true) {
   const g = getById(id);
   if (!g) return null;
@@ -107,5 +146,5 @@ function remove(userId, id) {
 }
 
 module.exports = {
-  create, getById, getForUser, listForUser, listActive, findByTitle, update, setStepDone, remove,
+  create, getById, getForUser, listForUser, listActive, findByTitle, update, setStepDone, markSteps, remove,
 };

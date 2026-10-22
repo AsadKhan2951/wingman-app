@@ -11,8 +11,10 @@ async function executeGoalTool(user, toolUse) {
         const title = String(input.title || '').trim();
         if (!title) return { error: 'TITLE_REQUIRED' };
         // Build the action plan with the LLM (best-effort — goal is created either way).
+        const L = require('../utils/language');
         const { steps, ideas } = await goalPlanner.plan({
           title, detail: input.detail || '', targetDate: input.target_date || null,
+          language: L.languageName(L.userLanguage(user)),
         });
         const planArr = steps.map((step) => ({ step, done: false }));
         const goal = goalsRepo.create(user.id, {
@@ -46,10 +48,23 @@ async function executeGoalTool(user, toolUse) {
         const goal = goalsRepo.findByTitle(user.id, input.goal || '');
         if (!goal) return { error: 'GOAL_NOT_FOUND' };
         let updated = goal;
-        if (input.step) updated = goalsRepo.setStepDone(goal.id, String(input.step), true) || updated;
+        let marked = [];
+        if (input.next_step_done || input.step) {
+          const r = goalsRepo.markSteps(goal.id, { text: input.step ? String(input.step) : null, next: !!input.next_step_done });
+          marked = r.marked;
+          if (r.goal) updated = r.goal;
+          if (!marked.length && !Number.isFinite(Number(input.progress))) {
+            return {
+              error: 'STEP_NOT_FOUND',
+              detail: 'No plan step matched — nothing was marked. Do NOT tell the user it is done. Pick the step from this list (or use next_step_done for the one you last nudged them about) and call again.',
+              steps: (goal.plan || []).map((s) => ({ step: s.step, done: !!s.done })),
+            };
+          }
+        }
         if (Number.isFinite(Number(input.progress))) updated = goalsRepo.update(goal.id, { progress: Number(input.progress) }) || updated;
         return {
           updated: true,
+          steps_marked_done: marked,
           goal: {
             title: updated.title,
             progress: updated.progress || 0,
