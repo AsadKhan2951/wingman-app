@@ -23,7 +23,9 @@ router.get('/auth/google', (req, res) => {
     return res.status(400).send('Missing phone parameter.');
   }
   if (!linkSig.canStartConnect(req, phone)) return res.status(403).send(STALE_LINK_HTML);
-  const url = googleAuth.getAuthUrl(phone);
+  // ?hint=<email> pre-selects the account that needs reconnecting.
+  const hint = /^[^@\s]{1,64}@[^@\s]{1,190}$/.test(String(req.query.hint || '')) ? String(req.query.hint) : null;
+  const url = googleAuth.getAuthUrl(phone, undefined, { loginHint: hint });
   res.redirect(url);
 });
 

@@ -104,6 +104,7 @@ async function scanUser(userId, { maxResults = 50 } = {}) {
       // Also include recent SENT mail so the follow-up tracker can capture
       // commitments the user made ("I'll send…").
       const sentIds = await gmail.listMessageIds(user, { maxResults: 20, query: 'in:sent newer_than:7d', account });
+      require('./googleConnection').markOk(user, { account });
       for (const id of [...ids, ...sentIds]) {
         if (seenIds.has(id)) continue;
         seenIds.add(id);
@@ -112,10 +113,9 @@ async function scanUser(userId, { maxResults = 50 } = {}) {
     } catch (err) {
       console.warn(`[emailScanner] list failed for ${(account && account.email) || user.phone}:`, err.message);
       const gc = require('./googleConnection');
-      if (gc.isAuthError(err)) await gc.markBroken(user, { account: account && account.email, reason: err.message });
+      if (gc.isAuthError(err)) await gc.markBroken(user, { account, reason: err.message });
     }
   }
-  if (items.length) require('./googleConnection').markOk(user);
 
   // The user's own email priorities (set in onboarding) — free-form text telling
   // Wingman which people/topics/situations matter. When set, the AI decides per

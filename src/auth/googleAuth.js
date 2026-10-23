@@ -81,9 +81,10 @@ function createOAuthClient() {
  * @param {string[]} [scopes]  scopes to request (defaults to all)
  * @returns {string} consent URL
  */
-function getAuthUrl(phone, scopes = SCOPES) {
+function getAuthUrl(phone, scopes = SCOPES, { loginHint = null } = {}) {
   const oauth2Client = createOAuthClient();
   return oauth2Client.generateAuthUrl({
+    ...(loginHint ? { login_hint: loginHint } : {}),
     access_type: 'offline',              // request a refresh token
     // 'select_account' forces Google's account chooser so a user can add a
     // DIFFERENT second account; 'consent' still forces refresh_token issuance.
@@ -136,6 +137,24 @@ async function fetchAccountEmail(oauth2Client) {
   return null;
 }
 
+function db() { return require('../db').db; }
+
+/** Does this stored account token still refresh? (forces a refresh, no cache) */
+async function tokenWorks(row) {
+  try {
+    const t = JSON.parse(row.token || '{}');
+    if (!t.refresh_token) return { ok: false };
+    const c = createOAuthClient();
+    c.setCredentials({ refresh_token: t.refresh_token });
+    await c.getAccessToken();
+    return { ok: true, email: row.email || await fetchAccountEmail(c) };
+  } catch (e) {
+    const gc = require('../services/googleConnection');
+    // A network blip is not "dead" — only a real auth error is.
+    return { ok: !gc.isAuthError(e) };
+  }
+}
+
 async function handleCallback(code, phone) {
   const oauth2Client = createOAuthClient();
   const { tokens } = await oauth2Client.getToken(code);
@@ -152,16 +171,56 @@ async function handleCallback(code, phone) {
     oauth2Client.setCredentials(tokens);
     const email = await fetchAccountEmail(oauth2Client);
     const accountsRepo = require('../db/googleAccounts');
-    const existing = email ? accountsRepo.findByEmail(user.id, email) : null;
-    const merged = existing
-      ? mergeTokens(existing.token, tokens)   // keep refresh_token across re-consent
-      : tokens;
-    const linked = accountsRepo.upsertByEmail(user.id, { email, token: merged, scopes: tokens.scope || null });
+    const gc = require('../services/googleConnection');
+    let existing = email ? accountsRepo.findByEmail(user.id, email) : null;
+
+    // An old connection saved before multi-account (no email on it). If its
+    // token is dead, THIS consent replaces it — otherwise reconnecting only
+    // added a new row and the dead one kept failing (and warning) forever.
+    let adopted = null;
+    if (!existing && email) {
+      const orphan = accountsRepo.listForUser(user.id).find((r) => !r.email);
+      if (orphan) {
+        const probe = await tokenWorks(orphan);
+        if (probe.ok && probe.email) {
+          accountsRepo.setEmail(orphan.id, probe.email);
+          if (String(probe.email).toLowerCase() === String(email).toLowerCase()) existing = accountsRepo.getById(orphan.id);
+        } else if (!probe.ok) {
+          adopted = orphan;
+        }
+      }
+    }
+
+    let linked;
+    if (adopted) {
+      accountsRepo.setEmail(adopted.id, email);
+      accountsRepo.updateToken(adopted.id, mergeTokens(adopted.token, tokens));
+      if (tokens.scope) db().prepare('UPDATE google_accounts SET scopes = ? WHERE id = ?').run(tokens.scope, adopted.id);
+      linked = accountsRepo.getById(adopted.id);
+    } else {
+      const merged = existing
+        ? mergeTokens(existing.token, tokens)   // keep refresh_token across re-consent
+        : tokens;
+      linked = accountsRepo.upsertByEmail(user.id, { email, token: merged, scopes: tokens.scope || null });
+    }
+
+    // The primary is dead and this account was just granted → make it primary,
+    // so every feature uses the working connection.
+    if (linked && !linked.is_primary) {
+      const primary = accountsRepo.getPrimary(user.id);
+      if (primary && primary.id !== linked.id && (gc.isBroken(usersRepo.getById(user.id)) || !(await tokenWorks(primary)).ok)) {
+        accountsRepo.setPrimary(user.id, linked.id);
+        linked = accountsRepo.getById(linked.id);
+      }
+    }
     // Only the primary account is mirrored into the legacy columns — otherwise
     // linking a second account would silently hijack every existing feature.
     linkedIsPrimary = !!(linked && linked.is_primary);
-    // Fresh consent → the "Google expired" state is over.
-    require('../services/googleConnection').markOk(user.id);
+    // Fresh consent → this account's "expired" state is over; quiet for 24h.
+    gc.markOk(user.id, { account: linked, reconnected: true });
+    gc.markOk(user.id, { account: 'legacy' });
+    if (adopted) gc.markOk(user.id, { account: { id: adopted.id } });
+    gc.prune(user.id);
   } catch (e) {
     console.warn('[auth] could not record google account:', e.message);
   }
@@ -339,6 +398,7 @@ function isEmailConnected(user) {
 }
 
 module.exports = {
+  tokenWorks,
   SCOPES,
   CALENDAR_SCOPES,
   GMAIL_SCOPES,

@@ -80,7 +80,7 @@ async function executeGmailTool(user, toolUse) {
             console.warn(`[gmail] list failed for ${who}:`, err.message);
             if (gc.isAuthError(err)) {
               failed.push(who);
-              await gc.markBroken(user, { account: account && account.email, reason: err.message });
+              await gc.markBroken(user, { account, reason: err.message });
             } else {
               failed.push(who);
             }

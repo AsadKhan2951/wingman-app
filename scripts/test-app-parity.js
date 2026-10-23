@@ -96,15 +96,22 @@ const check = (name, ok, extra = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  
 
   // ── Google connection expired → never "no new emails" ───────────────
   gmail.listMessageIds = async () => { throw new Error('unauthorized_client'); };
+  let clockMs = Date.now();
+  gc._setClock(() => clockMs);
   const dead = await executeGmailTool(u, { name: 'list_recent_emails', input: {} });
   check('expired Google → GOOGLE_RECONNECT_NEEDED (not "no emails")', dead.error === 'GOOGLE_RECONNECT_NEEDED', JSON.stringify(dead).slice(0, 120));
-  u = users.getById(u.id);
-  check('…user flagged + told ONCE on WhatsApp with the reconnect link', gc.isBroken(u) && sent.filter((x) => /reconnect/i.test(x)).length === 1 && /auth\/google\?/.test(sent[0]));
+  check('…one failure alone never pings the user', sent.filter((x) => /reconnect/i.test(x)).length === 0);
+  clockMs += 11 * 60e3;
   await executeGmailTool(u, { name: 'list_recent_emails', input: {} });
-  check('…not told again the same day', sent.filter((x) => /reconnect/i.test(x)).length === 1);
-  check('…assistant prompt warns that Google data may be old', /GOOGLE CONNECTION EXPIRED/.test(gc.promptBlock(users.getById(u.id))));
-  gc.markOk(u.id);
-  check('reconnect clears the flag', !gc.isBroken(users.getById(u.id)) && gc.promptBlock(users.getById(u.id)) === '');
+  u = users.getById(u.id);
+  check('…confirmed (2 failures ≥10 min apart) → told ONCE per account, naming it, link pre-selects it', sent.filter((x) => /aamir@gmail\.com/.test(x)).length === 1 && /aamir@gmail\.com/.test(sent[0]) && /auth\/google\?.*hint=aamir%40gmail\.com/.test(sent[0]), sent[0]);
+  clockMs += 3 * 3600e3;
+  await executeGmailTool(u, { name: 'list_recent_emails', input: {} });
+  check('…not told again for days', sent.filter((x) => /aamir@gmail\.com/.test(x)).length === 1);
+  check('…assistant knows which account is not syncing', /aamir@gmail\.com/.test(gc.promptBlock(users.getById(u.id))));
+  gc.markOk(u.id, { all: true, reconnected: true });
+  check('reconnect clears it', gc.brokenAccounts(users.getById(u.id)).length === 0 && gc.promptBlock(users.getById(u.id)) === '');
+  gc._setClock(null);
 
   // ── Prompt rules ───────────────────────────────────────────────────
   const sys = buildSystemPrompt(users.getById(u.id));
