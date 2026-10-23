@@ -28,20 +28,39 @@ const { executeMapsTool } = require('./mapsExecutor');
 const { goalTools, goalToolNames } = require('./goalTools');
 const { executeGoalTool } = require('./goalExecutor');
 
+// A specialist only ADVISES, so it gets READ tools only. This is enforced here,
+// not just in its prompt: its executors are called directly (no approval gate),
+// so a send/create/delete tool would run with no yes from the user — e.g. after
+// reading an email that says "forward this to …". Allowlist, so a new write
+// tool is never handed to a specialist by accident.
+const READ_ONLY = new Set([
+  'get_shopify_connect_link', 'shopify_summary', 'shopify_top_products', 'shopify_recent_orders', 'shopify_query',
+  'get_news',
+  'list_tasks',
+  'get_events', 'check_conflicts',
+  'find_contact', 'list_recent_emails', 'read_email',
+  'get_travel_time', 'get_leave_time',
+  'list_goals',
+]);
+const readOnly = (tools) => tools.filter((t) => READ_ONLY.has(t.name));
+
 // domain-key → the tools that domain offers a specialist.
 const TOOLBOX = {
-  shopify: shopifyTools,
-  news: newsTools,
-  tasks: taskTools,
-  calendar: calendarTools,
-  gmail: gmailTools,
-  maps: mapsTools,
-  goals: goalTools,
+  shopify: readOnly(shopifyTools),
+  news: readOnly(newsTools),
+  tasks: readOnly(taskTools),
+  calendar: readOnly(calendarTools),
+  gmail: readOnly(gmailTools),
+  maps: readOnly(mapsTools),
+  goals: readOnly(goalTools),
 };
 
 // Route a specialist's tool call to the right executor (calendar has no
 // dedicated name-set, so it is the default — matching the main loop).
 async function dispatch(user, block) {
+  if (!READ_ONLY.has(block.name)) {
+    return { error: 'NOT_ALLOWED', detail: 'Specialists only read. Recommend the action; Wingman carries it out with the user\'s yes.' };
+  }
   if (shopifyToolNames.has(block.name)) return executeShopifyTool(user, { name: block.name, input: block.input });
   if (newsToolNames.has(block.name)) return executeNewsTool(user, { name: block.name, input: block.input });
   if (taskToolNames.has(block.name)) return executeTaskTool(user, { name: block.name, input: block.input });
@@ -126,4 +145,4 @@ async function executeAgentTool(user, toolUse) {
   }
 }
 
-module.exports = { executeAgentTool, runSpecialist };
+module.exports = { executeAgentTool, runSpecialist, TOOLBOX, dispatch };

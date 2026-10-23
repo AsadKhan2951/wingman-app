@@ -11,7 +11,7 @@ import { tapQuiet } from '../shell/feedback'
 import { Switch } from '../shell/Switch'
 import { navigate } from '../shell/nav'
 import { api, ApiError } from '../data/api'
-import { startFresh } from '../data/session'
+import { clearAccountData, startFresh } from '../data/session'
 import { resetProfile } from '../data/store'
 import { clearOnboardingState } from '../onboarding/shared'
 import './app.css'
@@ -64,6 +64,7 @@ export const SettingsPrivacy = () => {
       await api.deleteAccount()
       resetProfile()
       clearOnboardingState()
+      clearAccountData()
       startFresh()
       toast(t('Your account has been deleted.'), 'check')
       navigate('')

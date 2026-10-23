@@ -272,6 +272,7 @@ node scripts/test-voice-chat.js        # chat voice notes on ElevenLabs (fake fe
 node scripts/test-accounts.js          # sign up / sign in / linking / reset (temp server)
 node scripts/test-rides.js             # Uber booking: options, yes-gate, tracker messages (fake Uber)
 node scripts/test-app-parity.js        # tasks delete/edit, email times/order, Gmail vs business, app parity, expired Google
+node scripts/test-security-fixes.js    # full-number phone match, sign-in ref, gate w/o Composio, specialists, automated runs
 docker exec wingman node scripts/eval-live.js   # real model, fake data, temp DB (~cents)
 ```
 

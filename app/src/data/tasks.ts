@@ -1,6 +1,10 @@
 import { useSyncExternalStore } from 'react'
-import { tasks as seed, type TaskItem } from './mock'
+import { tasks as mockTasks, type TaskItem } from './mock'
 import { api } from './api'
+import { DEMO } from './demo'
+
+// Sample tasks only in demo mode; real users start empty until theirs load.
+const seed = DEMO ? mockTasks : { ...mockTasks, groups: mockTasks.groups.map((g) => ({ ...g, items: [] })), done: [] }
 
 // Local completion overrides (keyed by title) so a tap feels instant even
 // before the backend confirms. Persisted so it survives a reload.
@@ -180,7 +184,7 @@ const snapshot = (): TaskView => {
 export const useTasks = () => useSyncExternalStore(subscribe, snapshot)
 export const taskView = snapshot
 
-/** Load the real tasks from the backend. Best-effort — keeps the seed on error. */
+/** Load the real tasks from the backend. Best-effort — keeps what it has on error. */
 export const hydrateTasks = async (): Promise<void> => {
   try {
     const res = await api.tasks()

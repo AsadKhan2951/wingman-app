@@ -1,5 +1,9 @@
 import { useSyncExternalStore } from 'react'
-import { brain, memory } from './mock'
+import { brain, memory as mockMemory } from './mock'
+import { DEMO } from './demo'
+
+// Sample memory notes only in demo mode.
+const memory = DEMO ? mockMemory : { ...mockMemory, notes: [] as typeof mockMemory.notes }
 
 type State = {
   forgotten: string[]

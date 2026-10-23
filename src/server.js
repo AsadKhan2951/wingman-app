@@ -555,7 +555,7 @@ async function handleSignInReply(m, phoneNumber) {
     const tail = String(r.phone || '').slice(-4);
     reply = `That sign-in request was for a different number (ending ${tail}). Enter the number you're messaging from, then try again.`;
   } else if (r.reason === 'expired') {
-    reply = 'That sign-in request has expired. Tap "Send my code" in the app again and send the new message.';
+    reply = 'That sign-in request has expired or was replaced by a newer one. Send the latest message the app opened, or tap "Send my code" again.';
   } else {
     reply = "I couldn't find that sign-in request. Start again from the app and send the message it opens.";
   }

@@ -91,11 +91,14 @@ const check = (name, ok, extra = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  
   check('…and only once', auth.takeConfirmed('923009998888', otp.pollSecret) !== 'confirmed');
   check('wrong poll secret gets nothing', auth.takeConfirmed('923009998888', 'nope') === 'unknown');
 
-  // 8b. "Resend" replaced the code, user then sends the OLD WM- message → still works.
+  // 8b. "Resend" replaced the code: the OLD WM- message must not confirm the new
+  // request (it may not be the user's — see test-security-fixes.js); the new one does.
   const first = auth.createOtp('923001230000', { ttlSeconds: 600 });
   const second = auth.createOtp('923001230000', { ttlSeconds: 600 });
   const late = auth.confirmByRef('923001230000', first.ref);
-  check('old ref after a resend still signs in (newest code)', late.ok && late.code === second.code
+  check('old ref after a resend is refused', !late.ok && late.reason === 'expired'
+    && auth.takeConfirmed('923001230000', second.pollSecret) === 'pending');
+  check('new ref after a resend signs in', auth.confirmByRef('923001230000', second.ref).ok
     && auth.takeConfirmed('923001230000', second.pollSecret) === 'confirmed');
   const local = auth.createOtp('923001239999', { ttlSeconds: 600 });
   check('number format differences are tolerated', auth.confirmByRef('+92 300 1239999', local.ref).ok);

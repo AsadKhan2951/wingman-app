@@ -2,6 +2,7 @@
 
 const crypto = require('crypto');
 const { db, uuid } = require('./index');
+const { phoneKey } = require('../utils/phone');
 
 // ── OTP codes ─────────────────────────────────────────────────────────
 
@@ -44,33 +45,26 @@ function recentRequestCount({ phone = null, ip = null, minutes = 60 } = {}) {
   return 0;
 }
 
-/** Last-10-digit key, so 0300…, 92300… and +92 300… compare equal. */
-function phoneKey(p) {
-  const d = String(p || '').replace(/\D/g, '');
-  return d.length > 10 ? d.slice(-10) : d.replace(/^0+/, '');
-}
 
 /**
  * The user messaged Wingman "WM-<ref>" from WhatsApp number `fromPhone`.
- * Sending from the number is the proof of ownership, so the request that gets
- * confirmed is the NEWEST live one for that number — even if the user tapped
- * "Resend" (which replaces the code) and then sent an older WM- message.
+ * Sending from the number is the proof of ownership, and it confirms ONLY the
+ * login request that ref names — never "the newest one for that number", which
+ * let someone who started a request for your number get signed in by any WM-
+ * message you sent (or by racing your own). After a "Resend" the old ref is
+ * dead; the user sends the new message the app opened.
  * Returns { ok, code } or { ok:false, reason }.
  */
 function confirmByRef(fromPhone, ref) {
   const r = String(ref || '').toUpperCase();
-  const key = phoneKey(fromPhone);
-  const live = db.prepare(`
-    SELECT * FROM otp_codes WHERE consumed = 0 ORDER BY created_at DESC, rowid DESC LIMIT 50
-  `).all().find((row) => phoneKey(row.phone) === key && new Date(row.expires_at).getTime() >= Date.now());
-  if (live) {
-    db.prepare('UPDATE otp_codes SET confirmed = 1 WHERE id = ?').run(live.id);
-    return { ok: true, code: live.code, phone: live.phone };
-  }
-  const byRef = r ? db.prepare('SELECT * FROM otp_codes WHERE ref = ? ORDER BY created_at DESC LIMIT 1').get(r) : null;
+  const byRef = r ? db.prepare(`
+    SELECT * FROM otp_codes WHERE ref = ? AND purpose = 'login' ORDER BY created_at DESC LIMIT 1
+  `).get(r) : null;
   if (!byRef) return { ok: false, reason: 'unknown' };
-  if (phoneKey(byRef.phone) !== key) return { ok: false, reason: 'other_number', phone: byRef.phone };
-  return { ok: false, reason: 'expired' };
+  if (phoneKey(byRef.phone) !== phoneKey(fromPhone)) return { ok: false, reason: 'other_number', phone: byRef.phone };
+  if (byRef.consumed || new Date(byRef.expires_at).getTime() < Date.now()) return { ok: false, reason: 'expired' };
+  db.prepare('UPDATE otp_codes SET confirmed = 1 WHERE id = ? AND consumed = 0').run(byRef.id);
+  return { ok: true, code: byRef.code, phone: byRef.phone };
 }
 
 /**

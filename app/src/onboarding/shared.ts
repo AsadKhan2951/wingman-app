@@ -559,15 +559,18 @@ export function useCodeBoxes(code: string[], setCode: (c: string[]) => void) {
   const onChange = (i: number, raw: string) => {
     const digits = raw.replace(/\D/g, '')
     // Autofill (keyboard suggestion / one-time-code) drops the WHOLE code into
-    // one box — spread it across the boxes instead of keeping one digit.
+    // one box — spread it across the boxes instead of keeping one digit. When
+    // the box already held a digit the new code is at the end, so a full code
+    // takes the LAST six digits.
     if (digits.length >= 4) {
       const start = digits.length >= 6 ? 0 : i
+      const take = digits.length >= 6 ? digits.slice(-6) : digits.slice(0, 6 - start)
       const next = [...code]
-      digits.slice(0, 6 - start).split('').forEach((d, j) => {
+      take.split('').forEach((d, j) => {
         next[start + j] = d
       })
       setCode(next)
-      const last = Math.min(start + digits.length, 6) - 1
+      const last = Math.min(start + take.length, 6) - 1
       refs.current[last]?.focus()
       return
     }

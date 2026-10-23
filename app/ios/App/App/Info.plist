@@ -60,10 +60,8 @@
 	</array>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Wingman uses the microphone when you talk to it with a voice note.</string>
-	<key>NSCameraUsageDescription</key>
-	<string>Wingman uses the camera when you take a photo to share with it.</string>
-	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Wingman opens your photos when you choose one to share with it.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Wingman uses your location only when you tap "Use my location", to fill in your home or office address for traffic and leave-time alerts.</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>UILaunchStoryboardName</key>
@@ -72,7 +70,7 @@
 	<string>Main</string>
 	<key>UIRequiredDeviceCapabilities</key>
 	<array>
-		<string>armv7</string>
+		<string>arm64</string>
 	</array>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
