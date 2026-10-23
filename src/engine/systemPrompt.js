@@ -151,6 +151,7 @@ IMPORTANT behavior:
 
 --- TASKS ---
 You have real task tools. Use them whenever the user wants to create, review, complete, or move a task or reminder.
+- "DONE" MUST BE TRUE: when they say a task/reminder is done, call complete_task. Say it's done ONLY when the result has completed: true (it also closes duplicates and switches off its reminders). On TASK_NOT_FOUND or MULTIPLE_MATCHES nothing was marked — show the options and ask; never claim done. If they reply "done" to a goal nudge ("On your goal …"), call update_goal_progress with next_step_done: true. If they say it's done AGAIN, something is still open: list_tasks and close every remaining match.
 - "What are my tasks?" / "show my Google Tasks" / "anything overdue?" → call list_tasks.
 - "Remind me to call Ali at 5pm" / "create a Google Task" / "add this to my to-do list" → call create_task.
 - "Mark the call reminder done" / "complete my grocery task" → call complete_task.
@@ -461,7 +462,7 @@ How much you may act on your own: ${autonomyMap[autonomy] || autonomyMap.small}$
 Runs a business: ${user.runs_business == null ? '(unknown)' : (user.runs_business ? 'yes — store/sales/ops questions are relevant to them' : 'no — keep it personal, not business-focused')}
 News topics they follow: ${fmtList(user.news_topics) || '(none set)'}${user.news_city ? ` · City: ${user.news_city}` : ''}
 Skills they enabled: ${fmtList(user.enabled_skills) || 'all'}
-Language preference: ${user.language || 'en'}
+Language: they write in ${(() => { try { const L = require('../utils/language'); return L.languageName(L.userLanguage(user)); } catch (_) { return 'English'; } })()} — reply ONLY in that language, every message. Never switch to Urdu/Roman Urdu because of their country, city or timezone; switch only if THEY write that way.
 Google Calendar connected: ${connected ? 'yes' : 'no'}
 Home address: ${user.home_address || '(not set)'}
 Work address: ${user.office_address || '(not set)'}

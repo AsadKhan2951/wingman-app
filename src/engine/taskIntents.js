@@ -63,11 +63,11 @@ async function handle(user, intent, now = new Date()) {
   }
 
   if (intent.type === 'complete') {
-    const task = tasksRepo.findByTitle(user.id, intent.phrase);
-    if (!task) return `I couldn't find a task matching "${intent.phrase}". Try "what are my tasks?" to see the list.`;
-    tasksRepo.complete(task.id);
-    try { await require('../services/googleTasks').mirrorTaskCompletion(task.id); } catch (_) { /* best-effort */ }
-    return `Marked *${task.title}* as done. \u2705`;
+    const r = await require('../services/taskDone').complete(user, { query: intent.phrase });
+    // Not sure which one → let the full assistant ask (returning null hands it over).
+    if (!r.completed) return null;
+    if (r.tasks.length) return `Marked *${r.tasks[0].title}* as done. \u2705${r.stopped_reminders.length ? ' No more reminders for it.' : ''}`;
+    return `Marked *${r.goal_steps_done[0]}* as done on your goal *${r.goal}*. \u2705`;
   }
 
   if (intent.type === 'move') {

@@ -18,8 +18,8 @@ const { db } = require('../db');
 const t = require('../utils/time');
 
 function speaksUrdu(user) {
-  const p = (user.preferences && user.preferences.styleProfile) || {};
-  return /urdu/i.test(String((p.chat && p.chat.language) || '')) || /^ur/i.test(String(user.language || ''));
+  // From how they actually write — never from where they live.
+  return /urdu/.test(require('../utils/language').userLanguage(user));
 }
 
 const fromName = (s) => String(s || '').replace(/\s*<.*>/, '').replace(/"/g, '').trim() || String(s || '');

@@ -214,8 +214,8 @@ function prepare(user, meeting, summary, { now = new Date() } = {}) {
 }
 
 function speaksUrdu(user) {
-  const p = (user.preferences && user.preferences.styleProfile) || {};
-  return /urdu/i.test(String((p.chat && p.chat.language) || '')) || /^ur/i.test(String(user.language || ''));
+  // From how they actually write — never from where they live.
+  return /urdu/.test(require('../utils/language').userLanguage(user));
 }
 
 function names(people) {

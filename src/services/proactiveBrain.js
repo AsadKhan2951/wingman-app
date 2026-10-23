@@ -147,6 +147,7 @@ function policyFor(user) {
     `Tone: ${user.tone || 'friendly'}`,
     `Style: ${user.communication_style || 'concise'}`,
     `Proactiveness: ${user.proactiveness_level || 'high'}`,
+    `Language: write ONLY in ${require('../utils/language').languageName(require('../utils/language').userLanguage(user))} — how they write to you, never guessed from their country`,
   ].join('\n');
 }
 
@@ -195,6 +196,8 @@ async function think(userId, { now = new Date() } = {}) {
   const user = usersRepo.getById(userId);
   if (!user) return { insights: [], skipped: 'no_user' };
 
+  // Close anything they already said is done before deciding what to nag about.
+  try { await require('./doneGuard').reconcile(user); } catch (_) { /* best-effort */ }
   const snap = snapshot(user, now);
   // The cheap guard: no time-sensitive signal → no model call, no message.
   if (!snap.hasSignals) return { insights: [], skipped: 'quiet' };
@@ -242,7 +245,8 @@ async function runForUser(userId, { now = new Date(), send = true } = {}) {
   const { insights, dayKey, sentToday, skipped } = await think(userId, { now });
   if (!insights || !insights.length) return { sent: null, skipped: skipped || 'nothing' };
 
-  const msg = insights.length === 1 ? insights[0] : insights.map((i) => `• ${i}`).join('\n');
+  let msg = insights.length === 1 ? insights[0] : insights.map((i) => `• ${i}`).join('\n');
+  try { msg = await require('./doneGuard').fixLanguage(user, msg); } catch (_) { /* keep */ }
 
   if (send) {
     const wa = require('../whatsapp/client');

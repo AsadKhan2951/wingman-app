@@ -81,23 +81,13 @@ async function executeTaskTool(user, toolUse) {
       }
 
       case 'complete_task': {
-        const task = tasksRepo.findByTitle(user.id, input.query || '');
-        if (!task) return { error: 'TASK_NOT_FOUND' };
-        tasksRepo.complete(task.id);
-        let sync = { synced: false, reason: 'NOT_CONNECTED' };
-        try { sync = await googleTasks.mirrorTaskCompletion(task.id); } catch (err) {
-          sync = { synced: false, reason: err.message || 'SYNC_FAILED' };
-        }
-        return {
-          completed: true,
-          task: {
-            id: task.id,
-            title: task.title,
-          },
-          synced_to_google_tasks: !!sync.synced,
-          google_account_email: sync.accountEmail || null,
-          sync_reason: sync.reason || null,
-        };
+        // Closes the task, its duplicates, its reminder automations and a
+        // matching goal step — so a "done" task never gets reminded again.
+        const r = await require('../services/taskDone').complete(user, {
+          query: input.query || '', taskId: input.task_id || null, all: !!input.all,
+        });
+        if (r.completed && r.tasks && r.tasks[0]) r.task = { id: r.tasks[0].task_id, title: r.tasks[0].title };
+        return r;
       }
 
       case 'move_task': {

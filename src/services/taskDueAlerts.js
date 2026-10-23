@@ -13,7 +13,8 @@ function buildMessage(user, task) {
   const tz = user.timezone || 'Asia/Karachi';
   const at = task.due_date ? t.timeLabel(task.due_date, tz) : null;
   const title = task.title || 'Untitled task';
-  const lang = (user.language || 'en').toLowerCase();
+  const code = require('../utils/language').userLanguage(user);
+  const lang = code === 'arabic' ? 'ar' : (/urdu/.test(code) ? 'ur' : 'en');
 
   if (lang === 'ur') {
     return [
@@ -75,6 +76,8 @@ async function alertForUser(userId, { now = new Date(), send = true, windowMin =
   if (!proactiveGate.allows(user, 'taskdue')) return { sent: [], skipped: 'gated' };
 
   const already = reminderState(user);
+  // Never remind about something they already said is done.
+  try { if (send) await require('./doneGuard').reconcile(user); } catch (_) { /* best-effort */ }
   const dueSoon = dueSoonTasks(user, now, windowMin);
   const sent = [];
 
